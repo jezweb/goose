@@ -10,6 +10,10 @@ import {
   Check,
   Circle,
   Shapes,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  FolderMinus,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
@@ -41,6 +45,7 @@ import {
   findSessionColor,
   findSessionIcon,
 } from '../../../constants/sessionPalette';
+import { FolderNameDialog, type FolderDialogMode } from './FolderNameDialog';
 
 const i18n = defineMessages({
   startNewChat: {
@@ -103,6 +108,26 @@ const i18n = defineMessages({
     id: 'sessionsList.iconDefault',
     defaultMessage: 'Default',
   },
+  moveToFolder: {
+    id: 'sessionsList.moveToFolder',
+    defaultMessage: 'Move to folder',
+  },
+  ungrouped: {
+    id: 'sessionsList.ungrouped',
+    defaultMessage: 'Ungrouped',
+  },
+  newFolder: {
+    id: 'sessionsList.newFolder',
+    defaultMessage: 'New folder…',
+  },
+  renameFolder: {
+    id: 'sessionsList.renameFolder',
+    defaultMessage: 'Rename folder',
+  },
+  deleteFolder: {
+    id: 'sessionsList.deleteFolder',
+    defaultMessage: 'Delete folder',
+  },
 });
 
 interface SessionsListProps {
@@ -131,11 +156,69 @@ export const SessionsList: React.FC<SessionsListProps> = ({
   onShowAll,
 }) => {
   const intl = useIntl();
-  const { metadata, updateSession } = useSessionUiMetadata();
+  const {
+    metadata,
+    updateSession,
+    addFolder,
+    renameFolder,
+    removeFolder,
+    setFolderExpanded,
+  } = useSessionUiMetadata();
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [sessionToDelete, setSessionToDelete] = useState<Session | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const inlineEditRefs = useRef<Map<string, InlineEditTextHandle>>(new Map());
+
+  // Folder name dialog state. `onConfirm` is set per-open so the same dialog
+  // serves both "create new folder + move chat into it" and "rename folder".
+  const [folderDialog, setFolderDialog] = useState<{
+    open: boolean;
+    mode: FolderDialogMode;
+    initialName: string;
+    onConfirm: (name: string) => void;
+  } | null>(null);
+
+  const closeFolderDialog = useCallback(() => setFolderDialog(null), []);
+
+  const openCreateFolderForSession = useCallback(
+    (sessionId: string) => {
+      setFolderDialog({
+        open: true,
+        mode: 'create',
+        initialName: '',
+        onConfirm: (name) => {
+          const folder = addFolder(name);
+          updateSession(sessionId, { folderId: folder.id });
+          setFolderExpanded(folder.id, true);
+          setFolderDialog(null);
+        },
+      });
+    },
+    [addFolder, updateSession, setFolderExpanded]
+  );
+
+  const openRenameFolder = useCallback(
+    (folderId: string, currentName: string) => {
+      setFolderDialog({
+        open: true,
+        mode: 'rename',
+        initialName: currentName,
+        onConfirm: (name) => {
+          renameFolder(folderId, name);
+          setFolderDialog(null);
+        },
+      });
+    },
+    [renameFolder]
+  );
+
+  const moveSessionToFolder = useCallback(
+    (sessionId: string, folderId: string | null) => {
+      updateSession(sessionId, { folderId: folderId ?? undefined });
+      if (folderId) setFolderExpanded(folderId, true);
+    },
+    [updateSession, setFolderExpanded]
+  );
 
   const handleSaveSessionName = useCallback(
     async (sessionId: string, newName: string) => {
@@ -171,6 +254,231 @@ export const SessionsList: React.FC<SessionsListProps> = ({
     }
   }, [sessionToDelete, onSessionDeleted, intl]);
 
+  // Group sessions by folder for rendering. Sessions whose folderId points at
+  // a folder that no longer exists fall back to ungrouped automatically.
+  const folderById = new Map(metadata.folders.map((f) => [f.id, f]));
+  const orderedFolders = [...metadata.folders].sort((a, b) => a.position - b.position);
+  const ungroupedSessions: Session[] = [];
+  const sessionsByFolder = new Map<string, Session[]>();
+  for (const session of sessions) {
+    const fid = metadata.bySession[session.id]?.folderId;
+    if (fid && folderById.has(fid)) {
+      const list = sessionsByFolder.get(fid) ?? [];
+      list.push(session);
+      sessionsByFolder.set(fid, list);
+    } else {
+      ungroupedSessions.push(session);
+    }
+  }
+  const expandedSet = new Set(metadata.expandedFolderIds);
+
+  const renderSessionRow = (session: Session) => {
+    const status = getSessionStatus(session.id);
+    const isStreaming = status?.streamState === 'streaming';
+    const hasError = status?.streamState === 'error';
+    const hasUnread = status?.hasUnreadActivity ?? false;
+    const isActiveSession = session.id === activeSessionId;
+    const isEditing = editingSessionId === session.id;
+    const sessionUi = metadata.bySession[session.id];
+    const colourEntry = findSessionColor(sessionUi?.color);
+    const iconEntry = findSessionIcon(sessionUi?.icon);
+    // Precedence: user-chosen icon > recipe (ChefHat) > default (MessageSquare)
+    const RowIcon = iconEntry?.Icon ?? (session.recipe ? ChefHat : MessageSquare);
+    const currentFolderId = sessionUi?.folderId ?? null;
+
+    return (
+      <ContextMenu key={session.id}>
+        <ContextMenuTrigger asChild>
+          <div
+            onClick={() => {
+              if (!isEditing) {
+                clearUnread(session.id);
+                onSessionClick(session.id);
+              }
+            }}
+            className={cn(
+              'w-full text-left py-1.5 px-2 text-xs rounded-md',
+              'hover:bg-background-tertiary transition-colors',
+              'flex items-center gap-2 cursor-pointer',
+              isActiveSession && 'bg-background-tertiary'
+            )}
+          >
+            <div className="w-4 flex-shrink-0 flex items-center justify-center">
+              {colourEntry && (
+                <span
+                  className={cn('size-2 rounded-full', colourEntry.dotClass)}
+                  aria-label={`Colour: ${colourEntry.label}`}
+                />
+              )}
+            </div>
+            <RowIcon className="w-4 h-4 flex-shrink-0 text-text-secondary" />
+            <InlineEditText
+              ref={(handle) => {
+                if (handle) {
+                  inlineEditRefs.current.set(session.id, handle);
+                } else {
+                  inlineEditRefs.current.delete(session.id);
+                }
+              }}
+              value={getSessionDisplayName(session)}
+              onSave={(newName) => handleSaveSessionName(session.id, newName)}
+              placeholder={intl.formatMessage(i18n.untitledSession)}
+              disabled={isStreaming}
+              singleClickEdit={false}
+              className="truncate text-text-primary flex-1 !px-0 !py-0 hover:bg-transparent"
+              editClassName="!text-xs"
+              onEditStart={() => setEditingSessionId(session.id)}
+              onEditEnd={() => setEditingSessionId(null)}
+            />
+            <SessionIndicators
+              isStreaming={isStreaming}
+              hasUnread={hasUnread}
+              hasError={hasError}
+            />
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem
+            disabled={isStreaming}
+            onSelect={() => {
+              inlineEditRefs.current.get(session.id)?.startEditing();
+            }}
+          >
+            <Pencil />
+            {intl.formatMessage(i18n.rename)}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <Palette />
+              {intl.formatMessage(i18n.colour)}
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent>
+              <ContextMenuItem
+                onSelect={() => updateSession(session.id, { color: undefined })}
+              >
+                <Circle />
+                {intl.formatMessage(i18n.colourNone)}
+                {!colourEntry && <Check className="ml-auto" />}
+              </ContextMenuItem>
+              {SESSION_COLORS.map((c) => (
+                <ContextMenuItem
+                  key={c.id}
+                  onSelect={() => updateSession(session.id, { color: c.id })}
+                >
+                  <span className={cn('size-3 rounded-full', c.dotClass)} />
+                  {c.label}
+                  {colourEntry?.id === c.id && <Check className="ml-auto" />}
+                </ContextMenuItem>
+              ))}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <Shapes />
+              {intl.formatMessage(i18n.icon)}
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="max-h-[400px] overflow-y-auto">
+              <ContextMenuItem
+                onSelect={() => updateSession(session.id, { icon: undefined })}
+              >
+                <MessageSquare />
+                {intl.formatMessage(i18n.iconDefault)}
+                {!iconEntry && <Check className="ml-auto" />}
+              </ContextMenuItem>
+              {SESSION_ICONS.map(({ id, label, Icon }) => (
+                <ContextMenuItem
+                  key={id}
+                  onSelect={() => updateSession(session.id, { icon: id })}
+                >
+                  <Icon />
+                  {label}
+                  {iconEntry?.id === id && <Check className="ml-auto" />}
+                </ContextMenuItem>
+              ))}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <Folder />
+              {intl.formatMessage(i18n.moveToFolder)}
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent>
+              <ContextMenuItem onSelect={() => moveSessionToFolder(session.id, null)}>
+                <Circle />
+                {intl.formatMessage(i18n.ungrouped)}
+                {currentFolderId === null && <Check className="ml-auto" />}
+              </ContextMenuItem>
+              {orderedFolders.length > 0 && <ContextMenuSeparator />}
+              {orderedFolders.map((folder) => (
+                <ContextMenuItem
+                  key={folder.id}
+                  onSelect={() => moveSessionToFolder(session.id, folder.id)}
+                >
+                  <Folder />
+                  {folder.name}
+                  {currentFolderId === folder.id && <Check className="ml-auto" />}
+                </ContextMenuItem>
+              ))}
+              <ContextMenuSeparator />
+              <ContextMenuItem onSelect={() => openCreateFolderForSession(session.id)}>
+                <FolderPlus />
+                {intl.formatMessage(i18n.newFolder)}
+              </ContextMenuItem>
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            variant="destructive"
+            disabled={isStreaming}
+            onSelect={() => setSessionToDelete(session)}
+          >
+            <Trash2 />
+            {intl.formatMessage(i18n.delete)}
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    );
+  };
+
+  const renderFolderHeader = (
+    folder: { id: string; name: string; position: number },
+    childCount: number
+  ) => {
+    const isExpanded = expandedSet.has(folder.id);
+    const HeaderIcon = isExpanded ? FolderOpen : Folder;
+    return (
+      <ContextMenu key={`folder-${folder.id}`}>
+        <ContextMenuTrigger asChild>
+          <div
+            onClick={() => setFolderExpanded(folder.id, !isExpanded)}
+            className={cn(
+              'w-full text-left py-1.5 px-2 text-xs rounded-md',
+              'hover:bg-background-tertiary transition-colors',
+              'flex items-center gap-2 cursor-pointer text-text-primary'
+            )}
+          >
+            <div className="w-4 flex-shrink-0" />
+            <HeaderIcon className="w-4 h-4 flex-shrink-0 text-text-secondary" />
+            <span className="truncate flex-1 font-medium">{folder.name}</span>
+            <span className="text-text-secondary tabular-nums">{childCount}</span>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onSelect={() => openRenameFolder(folder.id, folder.name)}>
+            <Pencil />
+            {intl.formatMessage(i18n.renameFolder)}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem variant="destructive" onSelect={() => removeFolder(folder.id)}>
+            <FolderMinus />
+            {intl.formatMessage(i18n.deleteFolder)}
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    );
+  };
+
   return (
     <AnimatePresence>
       {isExpanded && (
@@ -198,142 +506,16 @@ export const SessionsList: React.FC<SessionsListProps> = ({
               </div>
             )}
 
-            {sessions.map((session) => {
-              const status = getSessionStatus(session.id);
-              const isStreaming = status?.streamState === 'streaming';
-              const hasError = status?.streamState === 'error';
-              const hasUnread = status?.hasUnreadActivity ?? false;
-              const isActiveSession = session.id === activeSessionId;
-              const isEditing = editingSessionId === session.id;
-              const sessionUi = metadata.bySession[session.id];
-              const colourEntry = findSessionColor(sessionUi?.color);
-              const iconEntry = findSessionIcon(sessionUi?.icon);
-              // Precedence: user-chosen icon > recipe (ChefHat) > default (MessageSquare)
-              const RowIcon = iconEntry?.Icon ?? (session.recipe ? ChefHat : MessageSquare);
+            {ungroupedSessions.map(renderSessionRow)}
 
+            {orderedFolders.map((folder) => {
+              const folderSessions = sessionsByFolder.get(folder.id) ?? [];
+              const isFolderExpanded = expandedSet.has(folder.id);
               return (
-                <ContextMenu key={session.id}>
-                  <ContextMenuTrigger asChild>
-                    <div
-                      onClick={() => {
-                        if (!isEditing) {
-                          clearUnread(session.id);
-                          onSessionClick(session.id);
-                        }
-                      }}
-                      className={cn(
-                        'w-full text-left py-1.5 px-2 text-xs rounded-md',
-                        'hover:bg-background-tertiary transition-colors',
-                        'flex items-center gap-2 cursor-pointer',
-                        isActiveSession && 'bg-background-tertiary'
-                      )}
-                    >
-                      <div className="w-4 flex-shrink-0 flex items-center justify-center">
-                        {colourEntry && (
-                          <span
-                            className={cn('size-2 rounded-full', colourEntry.dotClass)}
-                            aria-label={`Colour: ${colourEntry.label}`}
-                          />
-                        )}
-                      </div>
-                      <RowIcon className="w-4 h-4 flex-shrink-0 text-text-secondary" />
-                      <InlineEditText
-                        ref={(handle) => {
-                          if (handle) {
-                            inlineEditRefs.current.set(session.id, handle);
-                          } else {
-                            inlineEditRefs.current.delete(session.id);
-                          }
-                        }}
-                        value={getSessionDisplayName(session)}
-                        onSave={(newName) => handleSaveSessionName(session.id, newName)}
-                        placeholder={intl.formatMessage(i18n.untitledSession)}
-                        disabled={isStreaming}
-                        singleClickEdit={false}
-                        className="truncate text-text-primary flex-1 !px-0 !py-0 hover:bg-transparent"
-                        editClassName="!text-xs"
-                        onEditStart={() => setEditingSessionId(session.id)}
-                        onEditEnd={() => setEditingSessionId(null)}
-                      />
-                      <SessionIndicators
-                        isStreaming={isStreaming}
-                        hasUnread={hasUnread}
-                        hasError={hasError}
-                      />
-                    </div>
-                  </ContextMenuTrigger>
-                  <ContextMenuContent>
-                    <ContextMenuItem
-                      disabled={isStreaming}
-                      onSelect={() => {
-                        inlineEditRefs.current.get(session.id)?.startEditing();
-                      }}
-                    >
-                      <Pencil />
-                      {intl.formatMessage(i18n.rename)}
-                    </ContextMenuItem>
-                    <ContextMenuSeparator />
-                    <ContextMenuSub>
-                      <ContextMenuSubTrigger>
-                        <Palette />
-                        {intl.formatMessage(i18n.colour)}
-                      </ContextMenuSubTrigger>
-                      <ContextMenuSubContent>
-                        <ContextMenuItem
-                          onSelect={() => updateSession(session.id, { color: undefined })}
-                        >
-                          <Circle />
-                          {intl.formatMessage(i18n.colourNone)}
-                          {!colourEntry && <Check className="ml-auto" />}
-                        </ContextMenuItem>
-                        {SESSION_COLORS.map((c) => (
-                          <ContextMenuItem
-                            key={c.id}
-                            onSelect={() => updateSession(session.id, { color: c.id })}
-                          >
-                            <span className={cn('size-3 rounded-full', c.dotClass)} />
-                            {c.label}
-                            {colourEntry?.id === c.id && <Check className="ml-auto" />}
-                          </ContextMenuItem>
-                        ))}
-                      </ContextMenuSubContent>
-                    </ContextMenuSub>
-                    <ContextMenuSub>
-                      <ContextMenuSubTrigger>
-                        <Shapes />
-                        {intl.formatMessage(i18n.icon)}
-                      </ContextMenuSubTrigger>
-                      <ContextMenuSubContent className="max-h-[400px] overflow-y-auto">
-                        <ContextMenuItem
-                          onSelect={() => updateSession(session.id, { icon: undefined })}
-                        >
-                          <MessageSquare />
-                          {intl.formatMessage(i18n.iconDefault)}
-                          {!iconEntry && <Check className="ml-auto" />}
-                        </ContextMenuItem>
-                        {SESSION_ICONS.map(({ id, label, Icon }) => (
-                          <ContextMenuItem
-                            key={id}
-                            onSelect={() => updateSession(session.id, { icon: id })}
-                          >
-                            <Icon />
-                            {label}
-                            {iconEntry?.id === id && <Check className="ml-auto" />}
-                          </ContextMenuItem>
-                        ))}
-                      </ContextMenuSubContent>
-                    </ContextMenuSub>
-                    <ContextMenuSeparator />
-                    <ContextMenuItem
-                      variant="destructive"
-                      disabled={isStreaming}
-                      onSelect={() => setSessionToDelete(session)}
-                    >
-                      <Trash2 />
-                      {intl.formatMessage(i18n.delete)}
-                    </ContextMenuItem>
-                  </ContextMenuContent>
-                </ContextMenu>
+                <React.Fragment key={folder.id}>
+                  {renderFolderHeader(folder, folderSessions.length)}
+                  {isFolderExpanded && folderSessions.map(renderSessionRow)}
+                </React.Fragment>
               );
             })}
 
@@ -366,6 +548,15 @@ export const SessionsList: React.FC<SessionsListProps> = ({
             onConfirm={handleConfirmDelete}
             onCancel={() => setSessionToDelete(null)}
           />
+          {folderDialog && (
+            <FolderNameDialog
+              open={folderDialog.open}
+              mode={folderDialog.mode}
+              initialName={folderDialog.initialName}
+              onConfirm={folderDialog.onConfirm}
+              onCancel={closeFolderDialog}
+            />
+          )}
         </motion.div>
       )}
     </AnimatePresence>
