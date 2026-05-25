@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useImperativeHandle } from 'react';
 import { toast } from 'react-toastify';
 import { errorMessage } from '../../utils/conversionUtils';
 import { defineMessages, useIntl } from '../../i18n';
@@ -36,19 +36,27 @@ interface InlineEditTextProps {
   singleClickEdit?: boolean;
 }
 
-export const InlineEditText: React.FC<InlineEditTextProps> = ({
-  value,
-  onSave,
-  maxLength = 200,
-  placeholder,
-  disabled = false,
-  className = '',
-  editClassName = '',
-  onEditStart,
-  onEditEnd,
-  allowEmpty = false,
-  singleClickEdit = true,
-}) => {
+export interface InlineEditTextHandle {
+  startEditing: () => void;
+}
+
+export const InlineEditText = React.forwardRef<InlineEditTextHandle, InlineEditTextProps>(
+  function InlineEditText(
+    {
+      value,
+      onSave,
+      maxLength = 200,
+      placeholder,
+      disabled = false,
+      className = '',
+      editClassName = '',
+      onEditStart,
+      onEditEnd,
+      allowEmpty = false,
+      singleClickEdit = true,
+    },
+    ref
+  ) {
   const intl = useIntl();
   const resolvedPlaceholder = placeholder ?? intl.formatMessage(i18n.enterText);
   const [isEditing, setIsEditing] = useState(false);
@@ -77,6 +85,8 @@ export const InlineEditText: React.FC<InlineEditTextProps> = ({
     setEditValue(value);
     onEditStart?.();
   }, [disabled, isSaving, value, onEditStart]);
+
+  useImperativeHandle(ref, () => ({ startEditing: handleStartEdit }), [handleStartEdit]);
 
   const handleCancel = useCallback(() => {
     setIsEditing(false);
@@ -202,4 +212,5 @@ export const InlineEditText: React.FC<InlineEditTextProps> = ({
       {value || <span className="text-text-subtle italic">{resolvedPlaceholder}</span>}
     </div>
   );
-};
+  }
+);
