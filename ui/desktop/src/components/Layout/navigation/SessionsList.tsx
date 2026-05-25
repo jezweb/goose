@@ -535,19 +535,19 @@ export const SessionsList: React.FC<SessionsListProps> = ({
     <AnimatePresence>
       {isExpanded && (
         <motion.div
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 'auto', opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          className="overflow-hidden mt-[2px]"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className="mt-[2px] flex-1 min-h-0 flex flex-col"
         >
-          <div className="bg-background-primary rounded-lg py-1 flex flex-col gap-[2px]">
-            {/* New Chat button as first item */}
+          <div className="bg-background-primary rounded-lg py-1 flex flex-col gap-[2px] flex-1 min-h-0 overflow-hidden">
+            {/* New Chat button — always visible, doesn't scroll */}
             {onNewChat && (
               <div
                 onClick={onNewChat}
                 className={cn(
-                  'w-full text-left py-1.5 px-2 text-xs rounded-md',
+                  'w-full text-left py-1.5 px-2 text-xs rounded-md flex-shrink-0',
                   'hover:bg-background-tertiary transition-colors',
                   'flex items-center gap-2 cursor-pointer'
                 )}
@@ -558,29 +558,32 @@ export const SessionsList: React.FC<SessionsListProps> = ({
               </div>
             )}
 
-            {ungroupedSessions.map(renderSessionRow)}
+            {/* Scrollable middle: ungrouped sessions + folders + their children */}
+            <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-[2px]">
+              {ungroupedSessions.map(renderSessionRow)}
 
-            {orderedFolders.map((folder) => {
-              const folderSessions = sessionsByFolder.get(folder.id) ?? [];
-              const isFolderExpanded = expandedSet.has(folder.id);
-              return (
-                <React.Fragment key={folder.id}>
-                  {renderFolderHeader(folder, folderSessions.length)}
-                  {isFolderExpanded && folderSessions.length > 0 && (
-                    <div className="pl-3 flex flex-col gap-[2px]">
-                      {folderSessions.map(renderSessionRow)}
-                    </div>
-                  )}
-                </React.Fragment>
-              );
-            })}
+              {orderedFolders.map((folder) => {
+                const folderSessions = sessionsByFolder.get(folder.id) ?? [];
+                const isFolderExpanded = expandedSet.has(folder.id);
+                return (
+                  <React.Fragment key={folder.id}>
+                    {renderFolderHeader(folder, folderSessions.length)}
+                    {isFolderExpanded && folderSessions.length > 0 && (
+                      <div className="pl-3 flex flex-col gap-[2px]">
+                        {folderSessions.map(renderSessionRow)}
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
 
-            {/* Show All button at bottom */}
+            {/* Show All button — pinned at bottom, doesn't scroll */}
             {onShowAll && sessions.length > 0 && (
               <div
                 onClick={onShowAll}
                 className={cn(
-                  'w-full text-left py-1.5 px-2 text-xs rounded-md',
+                  'w-full text-left py-1.5 px-2 text-xs rounded-md flex-shrink-0',
                   'hover:bg-background-tertiary transition-colors',
                   'flex items-center gap-2 cursor-pointer text-text-secondary'
                 )}

@@ -117,14 +117,17 @@ export const CondensedRenderer: React.FC<NavigationRendererProps> = ({
                   'relative cursor-move group',
                   isCondensedIconOnly ? 'flex-shrink-0' : 'w-full flex-shrink-0',
                   isDragOver && 'ring-2 ring-blue-500 rounded-lg',
-                  isChatItem && !isCondensedIconOnly && 'overflow-visible'
+                  isChatItem && !isCondensedIconOnly && 'overflow-visible',
+                  // When the chat list is expanded, let it claim remaining vertical space.
+                  isChatItem && !isCondensedIconOnly && isChatExpanded && 'flex-1 min-h-0'
                 )}
               >
                 <div
                   className={cn(
                     'flex flex-col',
                     isCondensedIconOnly ? 'items-start' : 'w-full',
-                    isChatItem && !isCondensedIconOnly && 'overflow-visible'
+                    isChatItem && !isCondensedIconOnly && 'overflow-visible',
+                    isChatItem && !isCondensedIconOnly && isChatExpanded && 'flex-1 min-h-0'
                   )}
                 >
                   {/* Chat item with dropdown in icon-only mode */}
@@ -272,7 +275,11 @@ export const CondensedRenderer: React.FC<NavigationRendererProps> = ({
 
           <div
             className={cn(
-              'bg-background-primary rounded-lg flex-1 min-h-[40px]',
+              'bg-background-primary rounded-lg min-h-[40px]',
+              // When the chat list is expanded it takes the remaining height;
+              // otherwise this spacer fills the gap so the nav background
+              // extends to the bottom of the column.
+              isChatExpanded && !isCondensedIconOnly ? 'flex-shrink-0' : 'flex-1',
               isCondensedIconOnly ? 'w-[40px]' : 'w-full'
             )}
           />
