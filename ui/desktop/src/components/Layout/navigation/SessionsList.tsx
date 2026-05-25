@@ -108,6 +108,14 @@ const i18n = defineMessages({
     id: 'sessionsList.iconDefault',
     defaultMessage: 'Default',
   },
+  iconSearchPlaceholder: {
+    id: 'sessionsList.iconSearchPlaceholder',
+    defaultMessage: 'Search icons',
+  },
+  iconNoResults: {
+    id: 'sessionsList.iconNoResults',
+    defaultMessage: 'No icons match',
+  },
   moveToFolder: {
     id: 'sessionsList.moveToFolder',
     defaultMessage: 'Move to folder',
@@ -167,7 +175,18 @@ export const SessionsList: React.FC<SessionsListProps> = ({
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [sessionToDelete, setSessionToDelete] = useState<Session | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [iconSearch, setIconSearch] = useState('');
   const inlineEditRefs = useRef<Map<string, InlineEditTextHandle>>(new Map());
+
+  // Lowercased once per render for fast lookup across all open icon submenus.
+  const iconSearchLower = iconSearch.trim().toLowerCase();
+  const filteredIcons = iconSearchLower
+    ? SESSION_ICONS.filter(
+        (i) =>
+          i.label.toLowerCase().includes(iconSearchLower) ||
+          i.id.toLowerCase().includes(iconSearchLower)
+      )
+    : SESSION_ICONS;
 
   // Folder name dialog state. `onConfirm` is set per-open so the same dialog
   // serves both "create new folder + move chat into it" and "rename folder".
@@ -378,24 +397,57 @@ export const SessionsList: React.FC<SessionsListProps> = ({
               <Shapes />
               {intl.formatMessage(i18n.icon)}
             </ContextMenuSubTrigger>
-            <ContextMenuSubContent className="max-h-[400px] overflow-y-auto">
+            <ContextMenuSubContent className="w-72 p-2 flex flex-col gap-2">
+              <input
+                type="text"
+                value={iconSearch}
+                onChange={(e) => setIconSearch(e.target.value)}
+                placeholder={intl.formatMessage(i18n.iconSearchPlaceholder)}
+                autoFocus
+                onKeyDown={(e) => {
+                  // Let Esc bubble so Radix closes the menu; swallow other
+                  // keys so the menu's type-ahead nav doesn't steal them.
+                  if (e.key !== 'Escape') e.stopPropagation();
+                }}
+                className="w-full px-2 py-1 text-sm rounded-md border bg-background-primary text-text-primary border-border-primary focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+              />
               <ContextMenuItem
-                onSelect={() => updateSession(session.id, { icon: undefined })}
+                onSelect={() => {
+                  updateSession(session.id, { icon: undefined });
+                  setIconSearch('');
+                }}
               >
                 <MessageSquare />
                 {intl.formatMessage(i18n.iconDefault)}
                 {!iconEntry && <Check className="ml-auto" />}
               </ContextMenuItem>
-              {SESSION_ICONS.map(({ id, label, Icon }) => (
-                <ContextMenuItem
-                  key={id}
-                  onSelect={() => updateSession(session.id, { icon: id })}
-                >
-                  <Icon />
-                  {label}
-                  {iconEntry?.id === id && <Check className="ml-auto" />}
-                </ContextMenuItem>
-              ))}
+              {filteredIcons.length === 0 ? (
+                <div className="px-2 py-3 text-xs text-text-secondary text-center">
+                  {intl.formatMessage(i18n.iconNoResults)}
+                </div>
+              ) : (
+                <div className="grid grid-cols-5 gap-1 max-h-64 overflow-y-auto">
+                  {filteredIcons.map(({ id, label, Icon }) => (
+                    <ContextMenuItem
+                      key={id}
+                      onSelect={() => {
+                        updateSession(session.id, { icon: id });
+                        setIconSearch('');
+                      }}
+                      title={label}
+                      className={cn(
+                        '!gap-0 !p-0 aspect-square flex items-center justify-center relative',
+                        iconEntry?.id === id && 'bg-background-secondary'
+                      )}
+                    >
+                      <Icon className="size-4" />
+                      {iconEntry?.id === id && (
+                        <Check className="absolute top-0.5 right-0.5 size-2.5" />
+                      )}
+                    </ContextMenuItem>
+                  ))}
+                </div>
+              )}
             </ContextMenuSubContent>
           </ContextMenuSub>
           <ContextMenuSub>
@@ -514,7 +566,11 @@ export const SessionsList: React.FC<SessionsListProps> = ({
               return (
                 <React.Fragment key={folder.id}>
                   {renderFolderHeader(folder, folderSessions.length)}
-                  {isFolderExpanded && folderSessions.map(renderSessionRow)}
+                  {isFolderExpanded && folderSessions.length > 0 && (
+                    <div className="pl-3 flex flex-col gap-[2px]">
+                      {folderSessions.map(renderSessionRow)}
+                    </div>
+                  )}
                 </React.Fragment>
               );
             })}
