@@ -1,5 +1,16 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { MessageSquare, ChefHat, Plus, History, Pencil, Trash2 } from 'lucide-react';
+import {
+  MessageSquare,
+  ChefHat,
+  Plus,
+  History,
+  Pencil,
+  Trash2,
+  Palette,
+  Check,
+  Circle,
+  Shapes,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { SessionIndicators } from '../../SessionIndicators';
@@ -8,6 +19,10 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from '../../ui/context-menu';
 import { ConfirmationModal } from '../../ui/ConfirmationModal';
@@ -19,6 +34,13 @@ import type { Session } from '../../../api';
 import type { SessionStatus } from './types';
 import { AppEvents } from '../../../constants/events';
 import { defineMessages, useIntl } from '../../../i18n';
+import { useSessionUiMetadata } from '../../../contexts/SessionUiMetadataContext';
+import {
+  SESSION_COLORS,
+  SESSION_ICONS,
+  findSessionColor,
+  findSessionIcon,
+} from '../../../constants/sessionPalette';
 
 const i18n = defineMessages({
   startNewChat: {
@@ -65,6 +87,22 @@ const i18n = defineMessages({
     id: 'sessionsList.deleteError',
     defaultMessage: 'Failed to delete chat',
   },
+  colour: {
+    id: 'sessionsList.colour',
+    defaultMessage: 'Colour',
+  },
+  colourNone: {
+    id: 'sessionsList.colourNone',
+    defaultMessage: 'No colour',
+  },
+  icon: {
+    id: 'sessionsList.icon',
+    defaultMessage: 'Icon',
+  },
+  iconDefault: {
+    id: 'sessionsList.iconDefault',
+    defaultMessage: 'Default',
+  },
 });
 
 interface SessionsListProps {
@@ -93,6 +131,7 @@ export const SessionsList: React.FC<SessionsListProps> = ({
   onShowAll,
 }) => {
   const intl = useIntl();
+  const { metadata, updateSession } = useSessionUiMetadata();
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [sessionToDelete, setSessionToDelete] = useState<Session | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -166,6 +205,11 @@ export const SessionsList: React.FC<SessionsListProps> = ({
               const hasUnread = status?.hasUnreadActivity ?? false;
               const isActiveSession = session.id === activeSessionId;
               const isEditing = editingSessionId === session.id;
+              const sessionUi = metadata.bySession[session.id];
+              const colourEntry = findSessionColor(sessionUi?.color);
+              const iconEntry = findSessionIcon(sessionUi?.icon);
+              // Precedence: user-chosen icon > recipe (ChefHat) > default (MessageSquare)
+              const RowIcon = iconEntry?.Icon ?? (session.recipe ? ChefHat : MessageSquare);
 
               return (
                 <ContextMenu key={session.id}>
@@ -184,12 +228,15 @@ export const SessionsList: React.FC<SessionsListProps> = ({
                         isActiveSession && 'bg-background-tertiary'
                       )}
                     >
-                      <div className="w-4 flex-shrink-0" />
-                      {session.recipe ? (
-                        <ChefHat className="w-4 h-4 flex-shrink-0 text-text-secondary" />
-                      ) : (
-                        <MessageSquare className="w-4 h-4 flex-shrink-0 text-text-secondary" />
-                      )}
+                      <div className="w-4 flex-shrink-0 flex items-center justify-center">
+                        {colourEntry && (
+                          <span
+                            className={cn('size-2 rounded-full', colourEntry.dotClass)}
+                            aria-label={`Colour: ${colourEntry.label}`}
+                          />
+                        )}
+                      </div>
+                      <RowIcon className="w-4 h-4 flex-shrink-0 text-text-secondary" />
                       <InlineEditText
                         ref={(handle) => {
                           if (handle) {
@@ -225,6 +272,58 @@ export const SessionsList: React.FC<SessionsListProps> = ({
                       <Pencil />
                       {intl.formatMessage(i18n.rename)}
                     </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuSub>
+                      <ContextMenuSubTrigger>
+                        <Palette />
+                        {intl.formatMessage(i18n.colour)}
+                      </ContextMenuSubTrigger>
+                      <ContextMenuSubContent>
+                        <ContextMenuItem
+                          onSelect={() => updateSession(session.id, { color: undefined })}
+                        >
+                          <Circle />
+                          {intl.formatMessage(i18n.colourNone)}
+                          {!colourEntry && <Check className="ml-auto" />}
+                        </ContextMenuItem>
+                        {SESSION_COLORS.map((c) => (
+                          <ContextMenuItem
+                            key={c.id}
+                            onSelect={() => updateSession(session.id, { color: c.id })}
+                          >
+                            <span className={cn('size-3 rounded-full', c.dotClass)} />
+                            {c.label}
+                            {colourEntry?.id === c.id && <Check className="ml-auto" />}
+                          </ContextMenuItem>
+                        ))}
+                      </ContextMenuSubContent>
+                    </ContextMenuSub>
+                    <ContextMenuSub>
+                      <ContextMenuSubTrigger>
+                        <Shapes />
+                        {intl.formatMessage(i18n.icon)}
+                      </ContextMenuSubTrigger>
+                      <ContextMenuSubContent className="max-h-[400px] overflow-y-auto">
+                        <ContextMenuItem
+                          onSelect={() => updateSession(session.id, { icon: undefined })}
+                        >
+                          <MessageSquare />
+                          {intl.formatMessage(i18n.iconDefault)}
+                          {!iconEntry && <Check className="ml-auto" />}
+                        </ContextMenuItem>
+                        {SESSION_ICONS.map(({ id, label, Icon }) => (
+                          <ContextMenuItem
+                            key={id}
+                            onSelect={() => updateSession(session.id, { icon: id })}
+                          >
+                            <Icon />
+                            {label}
+                            {iconEntry?.id === id && <Check className="ml-auto" />}
+                          </ContextMenuItem>
+                        ))}
+                      </ContextMenuSubContent>
+                    </ContextMenuSub>
+                    <ContextMenuSeparator />
                     <ContextMenuItem
                       variant="destructive"
                       disabled={isStreaming}

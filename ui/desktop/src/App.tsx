@@ -40,6 +40,7 @@ import { useConfig } from './components/ConfigContext';
 import { ModelAndProviderProvider } from './components/ModelAndProviderContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { FeaturesProvider } from './contexts/FeaturesContext';
+import { SessionUiMetadataProvider } from './contexts/SessionUiMetadataContext';
 import PermissionSettingsView from './components/settings/permission/PermissionSetting';
 
 import ExtensionsView, { ExtensionsViewOptions } from './components/extensions/ExtensionsView';
@@ -715,11 +716,13 @@ export default function App() {
     <ThemeProvider>
       <FeaturesProvider>
         <ModelAndProviderProvider>
-          <HashRouter>
-            <AppInner />
-          </HashRouter>
-          <AnnouncementModal />
-          <TelemetryConsentPrompt />
+          <SessionUiMetadataProvider>
+            <HashRouter>
+              <AppInner />
+            </HashRouter>
+            <AnnouncementModal />
+            <TelemetryConsentPrompt />
+          </SessionUiMetadataProvider>
         </ModelAndProviderProvider>
       </FeaturesProvider>
     </ThemeProvider>

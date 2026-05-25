@@ -175,6 +175,38 @@ function translateMenuLabels(items: MenuItem[]): void {
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 const STARTUP_LOGS_DIR = path.join(app.getPath('userData'), 'logs', 'startup');
 
+// Session UI metadata (per-session colour/icon/folder, ungrouped from Rust Session)
+const SESSION_UI_METADATA_FILE = path.join(
+  app.getPath('userData'),
+  'session-ui-metadata.json'
+);
+const EMPTY_SESSION_UI_METADATA = {
+  version: 1 as const,
+  bySession: {} as Record<string, unknown>,
+  folders: [] as unknown[],
+  expandedFolderIds: [] as string[],
+};
+
+function readSessionUiMetadata(): typeof EMPTY_SESSION_UI_METADATA {
+  if (!fsSync.existsSync(SESSION_UI_METADATA_FILE)) return EMPTY_SESSION_UI_METADATA;
+  try {
+    const data = fsSync.readFileSync(SESSION_UI_METADATA_FILE, 'utf8');
+    const parsed = JSON.parse(data);
+    if (parsed && typeof parsed === 'object' && parsed.version === 1) return parsed;
+    return EMPTY_SESSION_UI_METADATA;
+  } catch (err) {
+    console.error('Failed to read session-ui-metadata.json:', err);
+    return EMPTY_SESSION_UI_METADATA;
+  }
+}
+
+function writeSessionUiMetadata(metadata: unknown): void {
+  // Atomic write: tmp file + rename so we never leave a half-written JSON on disk
+  const tmp = SESSION_UI_METADATA_FILE + '.tmp';
+  fsSync.writeFileSync(tmp, JSON.stringify(metadata, null, 2));
+  fsSync.renameSync(tmp, SESSION_UI_METADATA_FILE);
+}
+
 function getSettings(): Settings {
   if (fsSync.existsSync(SETTINGS_FILE)) {
     let stored: Partial<Settings>;
@@ -1633,6 +1665,23 @@ ipcMain.handle('set-setting', (_event, key: SettingKey, value: unknown) => {
   if (key === 'keyboardShortcuts') {
     registerGlobalShortcuts();
   }
+});
+
+ipcMain.handle('get-session-ui-metadata', () => {
+  return readSessionUiMetadata();
+});
+
+ipcMain.handle('set-session-ui-metadata', (_event, metadata: unknown) => {
+  // Shape validation: must be the v1 envelope we expect.
+  if (
+    !metadata ||
+    typeof metadata !== 'object' ||
+    (metadata as { version?: unknown }).version !== 1
+  ) {
+    console.error('Invalid session UI metadata payload rejected');
+    return;
+  }
+  writeSessionUiMetadata(metadata);
 });
 
 ipcMain.handle('get-secret-key', () => {
