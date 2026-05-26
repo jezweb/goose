@@ -117,19 +117,14 @@ export const CondensedRenderer: React.FC<NavigationRendererProps> = ({
                   'relative cursor-move group',
                   isCondensedIconOnly ? 'flex-shrink-0' : 'w-full flex-shrink-0',
                   isDragOver && 'ring-2 ring-blue-500 rounded-lg',
-                  // Chat-expanded gets overflow-hidden so its scrollable interior
-                  // doesn't spill behind later nav items. Non-chat (or chat
-                  // collapsed) keeps overflow-visible for dropdowns/menus.
-                  isChatItem && !isCondensedIconOnly && !isChatExpanded && 'overflow-visible',
-                  isChatItem && !isCondensedIconOnly && isChatExpanded && 'flex-1 min-h-0 overflow-hidden'
+                  isChatItem && !isCondensedIconOnly && 'overflow-visible'
                 )}
               >
                 <div
                   className={cn(
                     'flex flex-col',
                     isCondensedIconOnly ? 'items-start' : 'w-full',
-                    isChatItem && !isCondensedIconOnly && !isChatExpanded && 'overflow-visible',
-                    isChatItem && !isCondensedIconOnly && isChatExpanded && 'flex-1 min-h-0 overflow-hidden'
+                    isChatItem && !isCondensedIconOnly && 'overflow-visible'
                   )}
                 >
                   {/* Chat item with dropdown in icon-only mode */}
@@ -277,11 +272,7 @@ export const CondensedRenderer: React.FC<NavigationRendererProps> = ({
 
           <div
             className={cn(
-              'bg-background-primary rounded-lg min-h-[40px]',
-              // When the chat list is expanded it takes the remaining height;
-              // otherwise this spacer fills the gap so the nav background
-              // extends to the bottom of the column.
-              isChatExpanded && !isCondensedIconOnly ? 'flex-shrink-0' : 'flex-1',
+              'bg-background-primary rounded-lg flex-1 min-h-[40px]',
               isCondensedIconOnly ? 'w-[40px]' : 'w-full'
             )}
           />

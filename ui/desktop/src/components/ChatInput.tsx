@@ -1,4 +1,5 @@
 import { AppEvents } from '../constants/events';
+import { useSessionUiMetadata } from '../contexts/SessionUiMetadataContext';
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { Bug, ChefHat, ScrollText } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/Tooltip';
@@ -503,31 +504,29 @@ export default function ChatInput({
     setHasUserTyped(false);
   }, [initialValue]);
 
-  // Geese-flock: respond to global PREFILL_CHAT_INPUT events. Lets a sidebar
-  // agent-button pre-fill `@<agent-slug> ` regardless of whether the user
-  // lands in Hub (fresh session) or stays in Pair (reused empty session).
-  // Any mounted ChatInput will hear the event and apply the prefill.
+  // Geese-flock: consume any pending chat prefill from the metadata context.
+  // The sidebar agent buttons set this when the user clicks "+ Start New
+  // Chat" under an agent — works regardless of whether the user lands in
+  // Hub (fresh session) or stays in Pair (reused empty session) because
+  // both views' ChatInput components run this effect.
+  const { pendingChatPrefill, consumePendingChatPrefill } = useSessionUiMetadata();
   useEffect(() => {
-    const handler = (event: Event) => {
-      const value = (event as CustomEvent<{ value?: string }>).detail?.value;
-      if (typeof value !== 'string') return;
-      setValue(value);
-      setDisplayValue(value);
-      window.setTimeout(() => {
-        const el = textAreaRef.current;
-        if (!el) return;
-        el.focus();
-        try {
-          el.setSelectionRange(value.length, value.length);
-        } catch {
-          // setSelectionRange can throw on certain input types — focus is
-          // the important part, caret placement is best-effort.
-        }
-      }, 0);
-    };
-    window.addEventListener(AppEvents.PREFILL_CHAT_INPUT, handler);
-    return () => window.removeEventListener(AppEvents.PREFILL_CHAT_INPUT, handler);
-  }, [textAreaRef]);
+    if (pendingChatPrefill === null) return;
+    const value = consumePendingChatPrefill();
+    if (value === null) return;
+    setValue(value);
+    setDisplayValue(value);
+    window.setTimeout(() => {
+      const el = textAreaRef.current;
+      if (!el) return;
+      el.focus();
+      try {
+        el.setSelectionRange(value.length, value.length);
+      } catch {
+        // best-effort caret placement
+      }
+    }, 0);
+  }, [pendingChatPrefill, consumePendingChatPrefill, textAreaRef]);
 
   // Handle recipe prompt updates
   useEffect(() => {

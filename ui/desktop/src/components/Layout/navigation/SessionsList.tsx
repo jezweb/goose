@@ -181,6 +181,7 @@ export const SessionsList: React.FC<SessionsListProps> = ({
     removeFolder,
     setFolderExpanded,
     setPendingAgent,
+    setPendingChatPrefill,
   } = useSessionUiMetadata();
   const { agents: flockAgents } = useFlockAgents();
 
@@ -571,19 +572,19 @@ export const SessionsList: React.FC<SessionsListProps> = ({
     <AnimatePresence>
       {isExpanded && (
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
-          className="mt-[2px] flex-1 min-h-0 flex flex-col"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          className="overflow-hidden mt-[2px]"
         >
-          <div className="bg-background-primary rounded-lg py-1 flex flex-col gap-[2px] flex-1 min-h-0 overflow-hidden">
-            {/* New Chat button — always visible, doesn't scroll */}
+          <div className="bg-background-primary rounded-lg py-1 flex flex-col gap-[2px]">
+            {/* New Chat button as first item */}
             {onNewChat && (
               <div
                 onClick={onNewChat}
                 className={cn(
-                  'w-full text-left py-1.5 px-2 text-xs rounded-md flex-shrink-0',
+                  'w-full text-left py-1.5 px-2 text-xs rounded-md',
                   'hover:bg-background-tertiary transition-colors',
                   'flex items-center gap-2 cursor-pointer'
                 )}
@@ -594,8 +595,10 @@ export const SessionsList: React.FC<SessionsListProps> = ({
               </div>
             )}
 
-            {/* Scrollable middle: ungrouped sessions + folders + agents + their children */}
-            <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-[2px]">
+            {/* Natural content layout — no internal scroll, the nav column
+                grows with the chat list; if it overflows, the user can
+                collapse folders/agents or use Show All */}
+            <>
               {ungroupedSessions.map(renderSessionRow)}
 
               {orderedFolders.map((folder) => {
@@ -643,19 +646,12 @@ export const SessionsList: React.FC<SessionsListProps> = ({
                           <div
                             onClick={() => {
                               setPendingAgent(agent.slug);
+                              // Pre-fill via context state — ChatInput
+                              // consumes it on mount or via reactive
+                              // useEffect, eliminating the timing race
+                              // between navigation and listener attach.
+                              setPendingChatPrefill(`@${agent.slug} `);
                               onNewChat();
-                              // Pre-fill the active chat input with `@<slug> `
-                              // via global event — works whether onNewChat
-                              // navigates to Hub (fresh session) or reuses
-                              // an empty active session in Pair. Slight delay
-                              // so the destination ChatInput is mounted/in DOM.
-                              window.setTimeout(() => {
-                                window.dispatchEvent(
-                                  new CustomEvent(AppEvents.PREFILL_CHAT_INPUT, {
-                                    detail: { value: `@${agent.slug} ` },
-                                  })
-                                );
-                              }, 50);
                             }}
                             className={cn(
                               'w-full text-left py-1.5 px-2 text-xs rounded-md',
@@ -676,14 +672,14 @@ export const SessionsList: React.FC<SessionsListProps> = ({
                   </React.Fragment>
                 );
               })}
-            </div>
+            </>
 
-            {/* Show All button — pinned at bottom, doesn't scroll */}
+            {/* Show All button at bottom */}
             {onShowAll && sessions.length > 0 && (
               <div
                 onClick={onShowAll}
                 className={cn(
-                  'w-full text-left py-1.5 px-2 text-xs rounded-md flex-shrink-0',
+                  'w-full text-left py-1.5 px-2 text-xs rounded-md',
                   'hover:bg-background-tertiary transition-colors',
                   'flex items-center gap-2 cursor-pointer text-text-secondary'
                 )}

@@ -30,10 +30,15 @@ interface SessionUiMetadataContextValue {
   // and clear the intent. Lets UI surfaces "start chat with agent X"
   // without needing onNewChat to grow new parameters.
   setPendingAgent: (slug: string | null) => void;
-  /** Current pendingAgent slug, exposed as reactive state so consumers
-   * (like Hub.tsx pre-filling the chat input with `@<slug> `) re-render
-   * when the user clicks an agent button. */
   pendingAgent: string | null;
+  /** Pending text to drop into the next-mounted (or currently-mounted)
+   * chat input — typically `@<agent-slug> ` for agent dispatch. Reactive
+   * state so ChatInput's useEffect on this dep fires regardless of whether
+   * ChatInput was already mounted or mounts after the value is set.
+   * ChatInput calls consumePendingChatPrefill() to read + clear in one step. */
+  pendingChatPrefill: string | null;
+  consumePendingChatPrefill: () => string | null;
+  setPendingChatPrefill: (value: string | null) => void;
 }
 
 const SessionUiMetadataContext = createContext<SessionUiMetadataContextValue | null>(null);
@@ -57,6 +62,7 @@ export function SessionUiMetadataProvider({ children }: { children: React.ReactN
   // problems.
   const [pendingAgent, setPendingAgentState] = useState<string | null>(null);
   const pendingAgentRef = useRef<string | null>(null);
+  const [pendingChatPrefill, setPendingChatPrefillState] = useState<string | null>(null);
 
   // Load once on mount
   useEffect(() => {
@@ -143,6 +149,16 @@ export function SessionUiMetadataProvider({ children }: { children: React.ReactN
     pendingAgentRef.current = slug;
     setPendingAgentState(slug);
   }, []);
+
+  const setPendingChatPrefill = useCallback((value: string | null) => {
+    setPendingChatPrefillState(value);
+  }, []);
+
+  const consumePendingChatPrefill = useCallback((): string | null => {
+    const v = pendingChatPrefill;
+    if (v !== null) setPendingChatPrefillState(null);
+    return v;
+  }, [pendingChatPrefill]);
 
   const updateSession = useCallback(
     (sessionId: string, patch: Partial<SessionUiData>) => {
@@ -263,6 +279,9 @@ export function SessionUiMetadataProvider({ children }: { children: React.ReactN
       setFolderExpanded,
       setPendingAgent,
       pendingAgent,
+      pendingChatPrefill,
+      consumePendingChatPrefill,
+      setPendingChatPrefill,
     }),
     [
       metadata,
@@ -274,6 +293,9 @@ export function SessionUiMetadataProvider({ children }: { children: React.ReactN
       setFolderExpanded,
       setPendingAgent,
       pendingAgent,
+      pendingChatPrefill,
+      consumePendingChatPrefill,
+      setPendingChatPrefill,
     ]
   );
 
