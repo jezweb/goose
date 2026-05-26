@@ -117,17 +117,19 @@ export const CondensedRenderer: React.FC<NavigationRendererProps> = ({
                   'relative cursor-move group',
                   isCondensedIconOnly ? 'flex-shrink-0' : 'w-full flex-shrink-0',
                   isDragOver && 'ring-2 ring-blue-500 rounded-lg',
-                  isChatItem && !isCondensedIconOnly && 'overflow-visible',
-                  // When the chat list is expanded, let it claim remaining vertical space.
-                  isChatItem && !isCondensedIconOnly && isChatExpanded && 'flex-1 min-h-0'
+                  // Chat-expanded gets overflow-hidden so its scrollable interior
+                  // doesn't spill behind later nav items. Non-chat (or chat
+                  // collapsed) keeps overflow-visible for dropdowns/menus.
+                  isChatItem && !isCondensedIconOnly && !isChatExpanded && 'overflow-visible',
+                  isChatItem && !isCondensedIconOnly && isChatExpanded && 'flex-1 min-h-0 overflow-hidden'
                 )}
               >
                 <div
                   className={cn(
                     'flex flex-col',
                     isCondensedIconOnly ? 'items-start' : 'w-full',
-                    isChatItem && !isCondensedIconOnly && 'overflow-visible',
-                    isChatItem && !isCondensedIconOnly && isChatExpanded && 'flex-1 min-h-0'
+                    isChatItem && !isCondensedIconOnly && !isChatExpanded && 'overflow-visible',
+                    isChatItem && !isCondensedIconOnly && isChatExpanded && 'flex-1 min-h-0 overflow-hidden'
                   )}
                 >
                   {/* Chat item with dropdown in icon-only mode */}

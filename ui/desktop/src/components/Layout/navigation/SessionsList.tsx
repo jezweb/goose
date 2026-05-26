@@ -644,6 +644,18 @@ export const SessionsList: React.FC<SessionsListProps> = ({
                             onClick={() => {
                               setPendingAgent(agent.slug);
                               onNewChat();
+                              // Pre-fill the active chat input with `@<slug> `
+                              // via global event — works whether onNewChat
+                              // navigates to Hub (fresh session) or reuses
+                              // an empty active session in Pair. Slight delay
+                              // so the destination ChatInput is mounted/in DOM.
+                              window.setTimeout(() => {
+                                window.dispatchEvent(
+                                  new CustomEvent(AppEvents.PREFILL_CHAT_INPUT, {
+                                    detail: { value: `@${agent.slug} ` },
+                                  })
+                                );
+                              }, 50);
                             }}
                             className={cn(
                               'w-full text-left py-1.5 px-2 text-xs rounded-md',

@@ -41,14 +41,11 @@ export default function Hub({
   const [workingDir, setWorkingDir] = useState(getInitialWorkingDir());
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const { pendingAgent } = useSessionUiMetadata();
-
-  // When the user clicked an agent's "+ Start New Chat" before arriving here,
-  // pre-fill the chat input with the agent's @-mention so Goose's native
-  // subagent dispatch fires when they send their first message. This is the
-  // *correct* Goose primitive for agent invocation — see also the @-menu in
-  // the chat input that lets users summon any agent at any time.
-  const initialChatValue = pendingAgent ? `@${pendingAgent} ` : '';
+  // pendingAgent isn't consumed here directly anymore — sidebar dispatches
+  // PREFILL_CHAT_INPUT after triggering new-chat, and ChatInput (here OR in
+  // Pair) responds via its own listener. The pendingAgent state still drives
+  // session tagging via ADD_ACTIVE_SESSION elsewhere in the context.
+  useSessionUiMetadata();
 
   // rAF is more reliable than autoFocus across async render boundaries (Suspense, OnboardingGuard, etc.)
   useEffect(() => {
@@ -107,7 +104,7 @@ export default function Hub({
           handleSubmit={handleSubmit}
           chatState={isCreatingSession ? ChatState.LoadingConversation : ChatState.Idle}
           onStop={() => {}}
-          initialValue={initialChatValue}
+          initialValue=""
           setView={setView}
           totalTokens={0}
           accumulatedInputTokens={0}
