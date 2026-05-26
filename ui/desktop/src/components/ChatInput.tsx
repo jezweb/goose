@@ -1,5 +1,6 @@
 import { AppEvents } from '../constants/events';
 import { useSessionUiMetadata } from '../contexts/SessionUiMetadataContext';
+import { useFlockAgents } from '../contexts/FlockAgentsContext';
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { Bug, ChefHat, ScrollText } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/Tooltip';
@@ -504,29 +505,23 @@ export default function ChatInput({
     setHasUserTyped(false);
   }, [initialValue]);
 
-  // Geese-flock: consume any pending chat prefill from the metadata context.
-  // The sidebar agent buttons set this when the user clicks "+ Start New
-  // Chat" under an agent — works regardless of whether the user lands in
-  // Hub (fresh session) or stays in Pair (reused empty session) because
-  // both views' ChatInput components run this effect.
-  const { pendingChatPrefill, consumePendingChatPrefill } = useSessionUiMetadata();
-  useEffect(() => {
-    if (pendingChatPrefill === null) return;
-    const value = consumePendingChatPrefill();
-    if (value === null) return;
-    setValue(value);
-    setDisplayValue(value);
-    window.setTimeout(() => {
-      const el = textAreaRef.current;
-      if (!el) return;
-      el.focus();
-      try {
-        el.setSelectionRange(value.length, value.length);
-      } catch {
-        // best-effort caret placement
+  // Geese-flock: auto-tag a session with the first @<known-agent> the user
+  // mentions. Folder grouping becomes a consequence of agent usage rather
+  // than a precondition — works with Goose's native @-mention dispatch.
+  const { metadata, updateSession, setPendingAgent } = useSessionUiMetadata();
+  const { agents: flockAgents } = useFlockAgents();
+  const detectFlockAgentMention = useCallback(
+    (text: string): string | null => {
+      const re = /(?:^|\s)@([A-Za-z0-9_-]+)/g;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(text)) !== null) {
+        const slug = match[1];
+        if (flockAgents.some((a) => a.slug === slug)) return slug;
       }
-    }, 0);
-  }, [pendingChatPrefill, consumePendingChatPrefill, textAreaRef]);
+      return null;
+    },
+    [flockAgents]
+  );
 
   // Handle recipe prompt updates
   useEffect(() => {
@@ -1126,6 +1121,24 @@ export default function ChatInput({
           }
         }
 
+        // Geese-flock auto-tag: if the message contains an @<known-agent>
+        // mention, record that agent on the session metadata so the sidebar
+        // groups it under that agent's folder. First-mention wins for the
+        // session's lifetime (we don't re-tag if already set).
+        const detectedSlug = detectFlockAgentMention(textToSend);
+        if (detectedSlug) {
+          if (sessionId) {
+            const existing = metadata.bySession[sessionId]?.agent;
+            if (!existing) {
+              updateSession(sessionId, { agent: detectedSlug });
+            }
+          } else {
+            // No session yet — Hub will create one. setPendingAgent stages
+            // the slug so the ADD_ACTIVE_SESSION listener applies it.
+            setPendingAgent(detectedSlug);
+          }
+        }
+
         handleSubmit({ msg: textToSend, images: imageData });
 
         // Auto-resume queue after sending a NON-interruption message (if it was paused due to interruption)
@@ -1154,6 +1167,11 @@ export default function ChatInput({
       handleSubmit,
       lastInterruption,
       clearInputState,
+      detectFlockAgentMention,
+      sessionId,
+      metadata.bySession,
+      updateSession,
+      setPendingAgent,
     ]
   );
 

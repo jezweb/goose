@@ -180,15 +180,11 @@ export const SessionsList: React.FC<SessionsListProps> = ({
     renameFolder,
     removeFolder,
     setFolderExpanded,
-    setPendingAgent,
-    setPendingChatPrefill,
   } = useSessionUiMetadata();
   const { agents: flockAgents } = useFlockAgents();
 
   // Track which agent sections the user has collapsed. Default is all
-  // expanded (we invert the predicate so an empty set means everything open).
-  // Resets each app start — agent count is small so persistent state isn't
-  // worth the storage complexity yet.
+  // expanded. Reset each app start — agent count is small.
   const [collapsedAgents, setCollapsedAgents] = useState<Set<string>>(new Set());
   const toggleAgentExpanded = useCallback((slug: string) => {
     setCollapsedAgents((prev) => {
@@ -299,10 +295,10 @@ export const SessionsList: React.FC<SessionsListProps> = ({
     }
   }, [sessionToDelete, onSessionDeleted, intl]);
 
-  // Group sessions in priority: agent first, then folder, then unassigned.
-  // A session with both an agent and a folder shows under its agent (the
-  // folder tag is still in metadata for later — nested-folder-under-agent is
-  // future work, not today).
+  // Group sessions in priority: agent (auto-derived from @-mention usage)
+  // first, then user folder, then unassigned. Agent tagging happens at
+  // submit time when ChatInput detects a known @<agent> in the message —
+  // the folder is a *consequence* of agent usage, not a cause.
   const folderById = new Map(metadata.folders.map((f) => [f.id, f]));
   const orderedFolders = [...metadata.folders].sort((a, b) => a.position - b.position);
   const agentBySlug = new Map(flockAgents.map((a) => [a.slug, a]));
@@ -616,10 +612,16 @@ export const SessionsList: React.FC<SessionsListProps> = ({
                 );
               })}
 
-              {/* Geese-flock agent sections — each agent is a folder-shaped
-                  header with its own +New Chat and tagged-session children. */}
+              {/* Agent folders — read-only visual groupings. A chat appears
+                here when ChatInput's submit detects a known @<agent> in
+                the user's message. Clicking the header toggles expand;
+                there's deliberately no "+ Start New Chat" button inside
+                because the folder is a *consequence* of agent usage, not
+                a trigger for it. To use an agent: @-mention it in any
+                chat. */}
               {flockAgents.map((agent) => {
                 const agentSessions = sessionsByAgent.get(agent.slug) ?? [];
+                if (agentSessions.length === 0) return null;
                 const isAgentExpanded = !collapsedAgents.has(agent.slug);
                 const HeaderIcon = isAgentExpanded ? FolderOpen : Folder;
                 return (
@@ -642,30 +644,6 @@ export const SessionsList: React.FC<SessionsListProps> = ({
                     </div>
                     {isAgentExpanded && (
                       <div className="pl-3 flex flex-col gap-[2px]">
-                        {onNewChat && (
-                          <div
-                            onClick={() => {
-                              setPendingAgent(agent.slug);
-                              // Pre-fill via context state — ChatInput
-                              // consumes it on mount or via reactive
-                              // useEffect, eliminating the timing race
-                              // between navigation and listener attach.
-                              setPendingChatPrefill(`@${agent.slug} `);
-                              onNewChat();
-                            }}
-                            className={cn(
-                              'w-full text-left py-1.5 px-2 text-xs rounded-md',
-                              'hover:bg-background-tertiary transition-colors',
-                              'flex items-center gap-2 cursor-pointer'
-                            )}
-                          >
-                            <div className="w-4 flex-shrink-0" />
-                            <Plus className="w-4 h-4 flex-shrink-0 text-text-secondary" />
-                            <span className="text-text-primary">
-                              {intl.formatMessage(i18n.startNewChat)}
-                            </span>
-                          </div>
-                        )}
                         {agentSessions.map(renderSessionRow)}
                       </div>
                     )}
