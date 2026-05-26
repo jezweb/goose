@@ -1,208 +1,170 @@
 ---
-title: geese-flock — design notes
-status: draft v0
-created: 2026-05-26
-author: jez (drafted with Claude Code, captured during the overnight Goose-fork session)
+title: Geese-flock — design notes (revised, post-implementation)
+status: v1-shipped — honest record of what we built and what we learned
+last_revised: 2026-05-26 12:35 (after a 12-hour overnight + morning build session)
 related:
-  - .jez/artifacts/scheduler-spawn-modes-design.md (scheduler enhancements that geese-flock would benefit from)
-  - https://github.com/block/goose/discussions/9416 (sidebar UX Discussion already posted upstream)
-  - /Users/Shared/goanna/ (the goanna substrate that geese-flock builds on)
-  - https://goose-docs.ai/docs/guides/context-engineering/ (subagents, hooks, plugins, persistent instructions)
+  - .jez/artifacts/scheduler-spawn-modes-design.md
+  - https://github.com/block/goose/discussions/9416
 ---
 
-# geese-flock — design notes
+# Geese-flock — design notes (revised)
 
-## What it is
+## TL;DR
 
-A Mac-only agentic workspace built as a thin layer over Goose, where the agent fleet is defined in the Goanna markdown substrate and the chat experience is Goose's. Multiple agents, each with their own identity, colour, folder, recipe, persistent instructions, and chat history. One application surface, many agents working as a flock.
+What started as a vision for a separate "flock" product became, in honest practice, **a set of small UX additions to Goose**. The additions are all aligned with Goose's existing design — no fork divergence beyond a single feature branch, no structurally new concepts.
 
-The name is "geese-flock" (one word lowercase by convention; `geeseflock` if you're typing fast). All `.com / .com.au / .au` domains were available as of 2026-05-26. Different enough from "Goose" that we're not sitting on Block's name.
+The full flock vision (separate product, Cloudflare backplane, agent-shaped memory, CWD-as-agent workflows) is **deferred to the future**, not abandoned. What we know now is what *doesn't* need to be built to get most of the value.
 
-## Architectural principles (load-bearing)
+---
 
-1. **Less Goose modification = less maintenance burden.** Every line we change in the fork is a line we have to re-merge when upstream changes. Our fork stays as close to upstream `block/goose` as humanly possible, and the divergence we do accept must earn its keep.
-2. **Configuration lives in markdown substrate, not code.** Agent definitions, recipes, persistent instructions, folder structure — all files in `/Users/Shared/goanna/`. Code reads files; files are the source of truth. Means you can edit agents in any text editor; means substrate is portable.
-3. **Goose remains the chat engine.** We don't reinvent streaming, interruption, tool calls, recipe parameterisation, message handling. That's the bit we can't beat by reinventing; it's also the bit Block keeps improving.
-4. **Extensions are the right plug-in shape for adding capabilities.** Goose's memory system is an extension — that's the proof. If we want goanna-aware memory, we write a goanna-memory extension. Same shape as their built-ins.
-5. **Mac-only is fine.** Scope constraint that buys us native macOS tabs, Aqua-style window tinting, Spotlight integration if we ever want it, no Windows/Linux build complexity.
-6. **Rebase-friendly is non-negotiable.** Every change in our fork is designed to be re-applied cleanly when we pull from upstream. We commit narrow, named, well-described changes. We don't refactor adjacent code "while we're there."
+## The mental model (finally clean)
 
-## The stack (four layers)
+Goose's primitives are people + places + tasks. They're separate concepts, each with one job.
 
-```
-Layer 4 (future):  Cloudflare backplane — sync, AI Gateway, remote agent runs
-                   ──────────────────────────────────────────────────────
-Layer 3:           geese-flock — minimal Goose fork (sidebar shape, agent UI)
-                                + Goose extensions (goanna-memory, etc.)
-                                + recipes living in substrate
-                   ──────────────────────────────────────────────────────
-Layer 2:           Goanna substrate (markdown files, R2-backed, daemon-synced)
-                   agents/, wiki/, recipes/, etc.
-                   ──────────────────────────────────────────────────────
-Layer 1:           Goose desktop + CLI (chat engine, agent runtime, scheduler)
-                   ──────────────────────────────────────────────────────
-```
-
-Each layer owns its job. Boundaries are stable: substrate is files, the chat engine is Goose, the agent UI is geese-flock, the cloud bits eventually slot in alongside.
-
-## What lives in the fork (kept narrow)
-
-Everything we change in our Goose fork falls in one of these buckets, and we audit every commit against this list:
-
-| Bucket | Examples | Status today |
-|---|---|---|
-| Per-session UI metadata | colour tag, icon, folder, future agent-id | ✅ shipped on `feature/session-context-menu` |
-| Sidebar shape | folders, fill-height, eventual multi-agent nav items | ✅ partial — folders shipped; multi-agent pending |
-| Window-level UX | named windows, tinted windows, native macOS tabs | ❌ pending |
-| Substrate awareness (read-only) | auto-derive folder list from `/Users/Shared/goanna/agents/`, surface agent metadata in headers | ❌ pending |
-| Conditional rendering for agent-defined recipes | dropdown showing agent-specific recipe list when in that agent's folder | ❌ pending |
-
-Things that DON'T live in the fork (intentional):
-
-- Memory systems (use a Goose extension, not core changes)
-- New tools (extensions / MCP, not core)
-- Persistent instructions logic (Goose handles this via env vars / MOIM already)
-- Cloud sync (use Goanna substrate + future Cloudflare layer; don't bake into the desktop)
-- Scheduler enhancements (push upstream via Discussion + PR; don't fork the Rust)
-
-## What lives as Goose extensions (the real workhorse)
-
-Goose's extension model means we can add capabilities without touching core. Our extension list:
-
-| Extension | What it does | Substrate path |
-|---|---|---|
-| `goanna-memory` | Read/write/search agent memory in markdown files. Each agent's journal + findings + persona become accessible as memory operations. | `/Users/Shared/goanna/agents/<slug>/journal/`, `findings/`, `persona.md` |
-| `goanna-recipe-loader` | When opening a chat tagged with agent X, load X's recipe + persistent instructions automatically | `/Users/Shared/goanna/agents/<slug>/recipe.yaml`, `CLAUDE.md` |
-| `goanna-inbox` | Check, triage, mark-read inbox items for the active agent | `/Users/Shared/goanna/agents/<slug>/inbox/` |
-| `goanna-wiki` | Read/write/search the shared wiki | `/Users/Shared/goanna/wiki/` |
-| `goanna-substrate-ops` (low-level) | Generic file/folder operations on substrate with frontmatter-aware writes | All of substrate |
-
-These are TypeScript or Python extensions packaged via Goose's plugin install path. Distributable, independently maintained, can be installed by anyone running vanilla Goose — they don't NEED the fork to use these.
-
-That's important: **the extensions work on vanilla Goose**. The fork is the optional UX upgrade. Someone could install just the goanna-memory extension and get value, even without geese-flock's sidebar shape.
-
-## What lives in the goanna substrate (no code at all)
-
-The substrate IS the configuration. No special schema, no JSON config files, no UI for editing. Just markdown:
-
-```
-/Users/Shared/goanna/
-├── agents/
-│   ├── boss/
-│   │   ├── CLAUDE.md          # identity, persona, scope (already exists)
-│   │   ├── persona.md          # voice, communication style
-│   │   ├── recipe.yaml         # NEW: goose recipe for this agent
-│   │   ├── inbox/              # existing
-│   │   ├── journal/            # existing
-│   │   ├── findings/           # existing
-│   │   └── flock.yaml          # NEW: optional UI hints (colour, icon, sort order)
-│   ├── boss/  ... etc
-│   ├── goannadev/ ... etc
-│   └── _template/              # template for new agents (already exists)
-├── wiki/                       # existing
-├── recipes/                    # NEW: shared recipes across agents
-└── skills/                     # existing — also loadable as goose skills via plugin
-```
-
-Adding a new agent = `mkdir agents/<slug>` and drop in a CLAUDE.md. Geese-flock picks it up via the goanna-recipe-loader extension and renders a nav item for it.
-
-## Existing capabilities to leverage (do NOT rebuild)
-
-Listed because forgetting these is the trap:
-
-- **goannad** — file watcher + R2 sync daemon. Already runs on every Mac. Don't reinvent sync.
-- **goose CLI** — headless agent invocation. `goose run --recipe <path>` is the cron path for scheduled agent work. Same backend as desktop.
-- **goose scheduler** — already exists; will eventually grow target modes per the scheduler design doc. We don't need a separate scheduler.
-- **goose extensions / plugins / hooks** — established mechanisms for capability extension. Use them.
-- **MOIM (persistent instructions)** — env-var driven, mid-session-editable per-turn injection. Per-agent identity goes here.
-- **goose's chat UX** — interruption, streaming, tool display, recipe parameterisation. The bit you love. Don't touch.
-- **Goose subagents** — ephemeral, report-back. Use for headless dispatches once the scheduler grows the right target mode.
-- **goose `gateway` command** — network surface to a running goose. Investigate; might be the bridge from local fork to remote Cloudflare orchestration.
-
-## Daily-life experience (what it feels like to use)
-
-You open geese-flock in the morning:
-
-- Sidebar shows your agents as expandable folders: boss, worker, librarian, scout, goannadev, anthro, marcus, ivy, lizzie...
-- Each folder has its accent colour from `flock.yaml` and the agent's emoji icon
-- Boss is expanded by default; you see yesterday's chats grouped chronologically
-- A new "Today" chat is already started — boss has been brief'd via persistent instructions about yesterday's activity (loaded from boss's journal entry)
-- You ask boss a question; the response streams in with Goose's familiar UX
-- Boss dispatches a subagent to triage librarian's inbox; result lands in this chat as a summary
-- Mid-conversation you switch to librarian's folder; that nav item expands; you see librarian's persona is loaded, librarian's recipe is active, librarian's memory is accessible
-- Goannad sync runs in background; whatever you write to substrate (notes, findings) propagates to your other Macs
-- At 6pm goose CLI fires (via goannad's cron) to run boss's daily-summary recipe; tomorrow morning a new chat in boss's folder already has yesterday's summary
-
-That's the experience. Real, achievable, no Rust required.
-
-## Phased rollout
-
-| Phase | What | Effort | Dependencies |
+| Concept | What it is | Where it lives | Persistence |
 |---|---|---|---|
-| **Phase 0** | This design doc | ✅ — this file | None |
-| **Phase 1** | Multi-agent nav items in sidebar (substrate-driven) | ~3 hours | Tonight's folder work |
-| **Phase 2** | `goanna-memory` extension (read substrate as Goose memory) | ~half day | None |
-| **Phase 3** | `goanna-recipe-loader` extension (per-agent recipe + MOIM) | ~half day | Phase 1 conventions |
-| **Phase 4** | Window-level naming + tinting + macOS native tabs | ~half day | None |
-| **Phase 5** | `goanna-inbox` extension (triage from chat) | ~half day | Phase 2 |
-| **Phase 6** | Recipe library expansion in substrate | ongoing | Phase 3 |
-| **Phase 7** | Goannad cron → goose CLI for scheduled agent runs | ~few hours | None |
-| **Phase 8** | Upstream scheduler Discussion (separate from #9416) | ~hours | #9416 has settled |
-| **Phase 9** | Cloudflare backplane (sync optional; AI Gateway routing) | longer | Vision-level |
+| **Agent** (Goose's term) | An identity. The `.md` file with frontmatter (name, description) and instructions body. | `~/.agents/agents/<slug>.md` (or any of Goose's other agent discovery paths) | Stateless — each `@-mention` dispatch starts fresh from the file |
+| **Project** (Goose's term) | A working directory you've used. Bookmark of a place. | Wherever the directory is on disk; Goose auto-tracks recent ones | Persistent — files and context live in the directory |
+| **Session** (Goose's term) | A single conversation. Has a working directory, may invoke agents. | SQLite session store, tied to a working dir | Persistent per-session |
+| **`.goosehints`** | Per-directory context loaded automatically when working there | In the working directory (root or nested) | Per-directory; survives across sessions in that directory |
 
-Phases 1-5 are the geese-flock MVP. Probably 2-3 focused sessions to complete.
+What's NOT a primitive in Goose (despite being one in Goanna):
+- "Agent with its own memory" — agents are stateless dispatched specialists
+- "Agent has an inbox / journal / findings folder" — those are Goanna inventions
+- "Opening a folder = becoming that agent's persona" — Goose's identity is the host (Goose itself); agents are tools it can call
 
-## Confirmed decisions (2026-05-26 morning)
+---
 
-- **Geese-flock is SEPARATE from Goanna.** Goanna stays at `/Users/Shared/goanna/` for Jez's Claude Code workflow. Geese-flock has its own substrate at `~/.agents/` (Goose's native convention) and its own Cloudflare workers (to be built fresh, open-source).
-- **Adopt Goose's standards completely.** No translation layers, no symlinks bridging goanna → goose. Geese-flock IS Goose-shaped from day one.
-- **Geese-flock will be open-sourceable.** Workers and plugins distributable; setup agent will help users deploy their own Cloudflare stack.
-- **Agent naming taxonomy: single-word role names that describe a recognisable professional function.** No hierarchy, no AI-vocabulary theater (no CEO/Synthesis Engineer/Cognitive Architect). Lowercase by convention.
-- **Starter agents: `orchestrator`, `researcher`, `developer`.** Three is enough to prove multi-agent UX. Future agents follow the same naming style (`writer`, `editor`, `analyst`, `designer`, `operator`, `curator`, `tester`, etc.).
+## Mapping Goanna concepts to Goose
 
-## Open questions to settle later
+| Goanna concept | Goose equivalent | Notes |
+|---|---|---|
+| Agent = folder of everything | Agent = just the `.md` file | Goose's agent is smaller in scope |
+| Agent's persona (`persona.md`) | Agent `.md` body | Same content, different file shape |
+| Agent's journal | Files in the working directory where chats happened | Goose has no per-agent memory; project files are the memory |
+| Agent's inbox | None native | Could be maintained manually as files in a directory |
+| Open Claude in agent folder | Set CWD to a directory; `.goosehints` there gets loaded | This is the "CWD-as-agent" pattern — possible but additive, not required |
+| `@-mention` for cross-agent talk | `@-mention` for subagent dispatch | Same word, similar idea |
 
-These need answers eventually, not before Phase 1:
+Key honest statement: **Goanna's agent-centric model and Goose's session-centric model don't fully unify. Trying to make one look like the other creates friction.** Either accept the difference (use each for what it's good at) or build a separate layer that bridges them (Option B below).
 
-1. **`geese-flock` vs `geeseflock` vs `Geese Flock`** — branding voice. The repo, the binary, the URL, the readme — canonical spelling.
-2. **Fork repo name** — keep `jezweb/goose` (descriptive), rename to `jezweb/geese-flock`, or new repo `jezweb/geese-flock` that pulls from upstream as a remote.
-3. **Public from day one or private until polished** — Jez's call.
-4. **What gets upstreamed back to Block** — the right-click/colour/icon/folder work is in Discussion #9416 already. Other rebase-safe improvements should also go upstream.
-5. **Branding visuals** — flock-themed icon, V-formation, etc. Adjacent to Goose's visual identity but distinct.
+---
 
-## What we won't build (boundaries)
+## What we built today
 
-Listed explicitly because temptation is the enemy:
+Six commits on `feature/session-context-menu` (https://github.com/jezweb/goose/tree/feature/session-context-menu). Everything below is small, focused, rebaseable, and aligned with Goose's existing UX patterns.
 
-- **Chat engine** — Goose has it. Touching it = pain.
-- **Memory primitives** — substrate IS the memory primitive. Use it.
-- **Cross-platform** — Mac only.
-- **Browser version** — Mac desktop only. Cloudflare-hosted bits later are services, not UIs.
-- **Custom LLM client** — Goose handles providers (OpenAI, Anthropic, OpenRouter, Bedrock, local Ollama, etc.). Inherit that.
-- **From-scratch scheduling** — Goose has it; we improve it upstream.
-- **New auth model** — agent identity is "which folder are you in?" Not user accounts.
+| Commit | Feature | Status |
+|---|---|---|
+| `1c5ba5d0` | Right-click context menu on chat rows (Rename, Delete) | ✅ working |
+| `ec41a759` | Colour tagging + icon picker (with shared metadata store) | ✅ working |
+| `0babac50` | User-created folders for chat organisation | ✅ working |
+| `3278ab7f` | Polish: indent in-folder children, searchable icon grid | ✅ working |
+| `b0a24d4d` | (Reverted) Fill-height sidebar — caused overflow problems | ❌ later reverted in `4c687894` |
+| `2ca84875` → `bc550dc02` | Multi-agent UX experiments — ended at: auto-tag on @-mention | ✅ working |
 
-## Why this attempt will work where others didn't
+The final flock-shaped behaviour:
 
-You've tried this shape several times (Hermes, Theo's T3, GPT Codex, your own builds, the Goanna desktop app whose screenshot you shared). The difference now:
+1. User starts any chat (no special "agent folder" entry point)
+2. Types `@<known-agent>` in their message (Goose's native @-mention dispatch fires)
+3. Our metadata layer detects the @-mention in the submission and tags the session with that agent slug
+4. Sidebar groups the chat under that agent's folder (folder is a *consequence* of usage, not a precondition)
+5. Empty agent folders are hidden — only agents you've actually used appear
 
-- **You're not building from zero.** Goose provides the chat engine — by far the most polish-heavy bit. You're building above it, not under it.
-- **The substrate is real.** Goanna already exists, with multiple agents, journals, inboxes, the daemon, the wiki. It's not a future plan; it's running on your Mac right now.
-- **The principle "minimal fork + extensions + substrate" stays achievable.** Total code-we-maintain over the next month is realistically 1500-2000 lines on top of upstream Goose. That's manageable for one person.
-- **The vision is grounded in capabilities that exist today.** Every layer of the stack has a working implementation we're leveraging, not just a hopeful design.
+Plus also working: right-click on any chat row → Rename / Colour ▶ / Icon ▶ / Move to folder ▶ / Delete. User-created folders with their own context menu (Rename folder, Delete folder).
 
-## References
+---
 
-- `.jez/artifacts/scheduler-spawn-modes-design.md` — the scheduler work that, when upstreamed, makes goanna-cron + goose subagents seamless
-- `https://github.com/block/goose/discussions/9416` — the sidebar UX Discussion already filed; Phase 1 of geese-flock builds on whatever lands here
-- `/Users/Shared/goanna/CLAUDE.md` — current goanna brief, the substrate authority
-- `https://goose-docs.ai/docs/guides/context-engineering/subagents/` — the subagent primitive we lean on for headless work
-- `https://goose-docs.ai/docs/guides/context-engineering/plugins` — the plug-in distribution path for the goanna-* extensions
+## What we tried that didn't work (and why)
 
-## Tomorrow's first session, when rested
+Four false starts, each instructive:
 
-The shortest path from here to "geese-flock feels real":
+| Attempt | Why it failed |
+|---|---|
+| **Recipe injection** (commit `10994f67`, reverted) | Recipe's `instructions` field extends Goose's system prompt rather than replacing it. The base "I am Goose" identity stays dominant; the agent's body just gets appended. Subagents work differently because they start fresh — but recipes injected into a top-level chat don't get that fresh start. |
+| **Event-based PREFILL_CHAT_INPUT** (later removed) | Race between firing the event and the destination ChatInput mounting + attaching its listener. 50ms timeout was a band-aid; the root issue was the wrong primitive (event-based handoff between unmounted-and-remounting components). |
+| **Context-state PREFILL** (still in code but unused) | Worked architecturally, but the prefill mechanism itself was wrong-shaped: users typed text without `@` because the prefill was either invisible or got cleared somewhere in the navigation flow. |
+| **Filling-height sidebar** | Even with overflow-hidden, the chat block kept rendering behind the lower nav items at some heights. Original Goose layout was internally consistent; our changes kept introducing inconsistencies. Reverted to natural content sizing. |
 
-**Build Phase 1 — multi-agent nav items.** Replace the single hardcoded "Chat" nav item with N items, one per `/Users/Shared/goanna/agents/<slug>/` folder found at startup. Each agent's nav item expands to show that agent's chat history (filtered by an `agent` field on the session metadata). New chats started under an agent's nav item get that agent tag automatically. Builds entirely on the metadata layer we shipped tonight.
+Common thread: **we were trying to bind the chat's identity to its sidebar location**. Goose's design doesn't have that binding; every attempt to fake it produced misleading UX. The right primitive is `@-mention` for invocation; the sidebar location is just a record of which agent was invoked.
 
-That single change makes the flock visible. Everything else accrues on top.
+---
+
+## What's deferred (not abandoned)
+
+Real ideas worth picking up later. None blocks today's work.
+
+| Idea | Shape | Effort |
+|---|---|---|
+| **Window naming + tinting** | iTerm-style multi-window colour-coding for visual recognition | ~2 hours |
+| **macOS native tabs** | `BrowserWindow.addTabbedWindow()` — one config line + new-window-into-existing-group | ~1 hour |
+| **CWD-as-agent workflow** | Each agent gets a folder containing `.goosehints`; "Start chat in agent's space" button sets CWD = that folder. Goose loads the hints; agent context applies in the goanna-style way. Memory accumulates as files in the agent's folder. | ~half-day |
+| **Scheduler enhancements** | The Discussion-ready brain-dump in `.jez/artifacts/scheduler-spawn-modes-design.md` — 3 target modes (spawn / inject / subagent dispatched into a parent session). Wants upstream alignment via a Goose Discussion. | Hours of UI + a Rust PR |
+| **Open-source the Cloudflare workers** | Geese-flock workers (fileshare equivalent, assets, emailer) as OSS, with a "setup agent" that deploys them to the user's CF account | Months — real product effort |
+| **Goanna → Goose substrate bridge** | An MCP server that exposes goanna's `/Users/Shared/goanna/` files as tools to Goose sessions. Lets Goose chats read goanna context without forcing a substrate move. | Half-day for a basic version |
+
+---
+
+## What's clearly NOT happening (and why)
+
+Be explicit so we don't loop back to these:
+
+| Idea | Why dropped |
+|---|---|
+| "Geese-flock as a separate Electron app" | What we built doesn't justify a separate app. Six commits on a Goose fork is the right scope. Goanna-desktop (Jez's earlier attempt) showed building chat from scratch is months of polish work. |
+| "Make Goose chats behave as their agent" | Goose doesn't have that primitive. Faking it produces misleading UX. The honest behaviour is `@-mention` for dispatch, folder for organisation. |
+| "Folder triggers agent identity" | Same as above. Folder is consequence, not cause. |
+| "Replace Goose's session model with goanna's agent model" | Goose's model is internally consistent; ours-on-top-of-Goose's is just adding friction. Goanna keeps being goanna; Goose keeps being Goose. |
+
+---
+
+## Where we are now, where we go next
+
+**Stable, working today** (no further effort needed):
+- Right-click menu (Rename / Delete / Colour ▶ / Icon ▶ / Move to folder ▶)
+- Colour + icon tagging (~7 colour palette, 20 icons with search)
+- User-created folders with rename/delete
+- Auto-tag chats by @-mentioned agent → agent folders auto-populate
+- Sidebar grows naturally with content (no fill-height fight)
+
+**Worth contributing upstream** (when we feel like it):
+- Discussion #9416 is already posted with the broader vision (right-click + colour + icon + folder)
+- Could be split into focused PRs if Block engages
+- Auto-tag-on-@-mention is the genuinely new UX — also a candidate for a PR
+- Add a "Want to add `.jez/screenshots` to your post?" reminder before posting
+
+**Not worth doing tonight** (just rest):
+- Anything else from the deferred list above
+- Re-litigating the architecture
+
+**For a future session resuming this**:
+- The branch is at `bc550dc02` on `feature/session-context-menu`
+- The agent files in `~/.agents/agents/` (orchestrator/researcher/developer) work with both Goose's native discovery and our sidebar
+- The Recipe-injection plumbing in `sessions.ts` is still in place (added but unused) — could be removed in a cleanup commit if desired
+- Some context state (pendingChatPrefill, consumePendingChatPrefill) in SessionUiMetadataContext is no longer used — also a cleanup candidate
+
+---
+
+## Reflection: what to actually call this work
+
+We've been calling it "geese-flock". Honestly:
+
+- It's a Goose fork with UX additions
+- The additions don't yet justify a separate product identity
+- Calling it "flock" creates pressure to be a flock (separate, brand, deployable, etc.)
+- A more honest framing: **"Jez's Goose fork with sidebar polish"**
+
+The "flock" name can stay reserved for the future when (and if) the goanna-bridge / CWD-as-agent / open-source-workers ambitions land. Today's work doesn't need a new identity.
+
+When you next pick this up: ask yourself if you want to push these changes upstream (they're rebase-friendly), keep them as your personal fork, or expand them into something bigger. All three are valid; today's work supports any of them.
+
+---
+
+## Open questions for next time (no rush)
+
+1. **Should we clean up the dead code** (`pendingChatPrefill`, the Recipe injection path in createSession)? They're harmless but they're scaffolding that no longer carries weight. Cleanup is a 10-minute commit.
+2. **Should we update Discussion #9416** with the auto-tag mechanism we landed? It's a meaningful enhancement to the vision in the original post.
+3. **Should we keep contributing toward upstream**? Right-click menu is the cleanest first PR if you want to engage Block. Colour/icon/folders are larger but still upstream-able. Auto-tag is novel and might or might not interest Block.
+4. **When/whether to revisit CWD-as-agent**? That's the path closest to your goanna instincts. Real work, real value, real deferral.
+
+None of these need answers tonight. They're just markers so the next session knows where to look.
