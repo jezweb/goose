@@ -14,7 +14,6 @@ import {
   FolderOpen,
   FolderPlus,
   FolderMinus,
-  Bird,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
@@ -184,6 +183,20 @@ export const SessionsList: React.FC<SessionsListProps> = ({
     setPendingAgent,
   } = useSessionUiMetadata();
   const { agents: flockAgents } = useFlockAgents();
+
+  // Track which agent sections the user has collapsed. Default is all
+  // expanded (we invert the predicate so an empty set means everything open).
+  // Resets each app start — agent count is small so persistent state isn't
+  // worth the storage complexity yet.
+  const [collapsedAgents, setCollapsedAgents] = useState<Set<string>>(new Set());
+  const toggleAgentExpanded = useCallback((slug: string) => {
+    setCollapsedAgents((prev) => {
+      const next = new Set(prev);
+      if (next.has(slug)) next.delete(slug);
+      else next.add(slug);
+      return next;
+    });
+  }, []);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [sessionToDelete, setSessionToDelete] = useState<Session | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -285,14 +298,25 @@ export const SessionsList: React.FC<SessionsListProps> = ({
     }
   }, [sessionToDelete, onSessionDeleted, intl]);
 
-  // Group sessions by folder for rendering. Sessions whose folderId points at
-  // a folder that no longer exists fall back to ungrouped automatically.
+  // Group sessions in priority: agent first, then folder, then unassigned.
+  // A session with both an agent and a folder shows under its agent (the
+  // folder tag is still in metadata for later — nested-folder-under-agent is
+  // future work, not today).
   const folderById = new Map(metadata.folders.map((f) => [f.id, f]));
   const orderedFolders = [...metadata.folders].sort((a, b) => a.position - b.position);
+  const agentBySlug = new Map(flockAgents.map((a) => [a.slug, a]));
+  const sessionsByAgent = new Map<string, Session[]>();
   const ungroupedSessions: Session[] = [];
   const sessionsByFolder = new Map<string, Session[]>();
   for (const session of sessions) {
-    const fid = metadata.bySession[session.id]?.folderId;
+    const ui = metadata.bySession[session.id];
+    if (ui?.agent && agentBySlug.has(ui.agent)) {
+      const list = sessionsByAgent.get(ui.agent) ?? [];
+      list.push(session);
+      sessionsByAgent.set(ui.agent, list);
+      continue;
+    }
+    const fid = ui?.folderId;
     if (fid && folderById.has(fid)) {
       const list = sessionsByFolder.get(fid) ?? [];
       list.push(session);
@@ -316,9 +340,6 @@ export const SessionsList: React.FC<SessionsListProps> = ({
     // Precedence: user-chosen icon > recipe (ChefHat) > default (MessageSquare)
     const RowIcon = iconEntry?.Icon ?? (session.recipe ? ChefHat : MessageSquare);
     const currentFolderId = sessionUi?.folderId ?? null;
-    const sessionAgent = sessionUi?.agent
-      ? flockAgents.find((a) => a.slug === sessionUi.agent)
-      : undefined;
 
     return (
       <ContextMenu key={session.id}>
@@ -364,14 +385,6 @@ export const SessionsList: React.FC<SessionsListProps> = ({
               onEditStart={() => setEditingSessionId(session.id)}
               onEditEnd={() => setEditingSessionId(null)}
             />
-            {sessionAgent && (
-              <span
-                className="text-text-secondary text-[10px] truncate max-w-[80px] flex-shrink-0"
-                title={`Agent: ${sessionAgent.name}`}
-              >
-                {sessionAgent.slug}
-              </span>
-            )}
             <SessionIndicators
               isStreaming={isStreaming}
               hasUnread={hasUnread}
@@ -581,32 +594,7 @@ export const SessionsList: React.FC<SessionsListProps> = ({
               </div>
             )}
 
-            {/* Geese-flock: quick-start buttons for each agent under ~/.agents/agents/ */}
-            {onNewChat && flockAgents.length > 0 && (
-              <div className="flex-shrink-0 flex flex-col gap-[2px]">
-                {flockAgents.map((agent) => (
-                  <div
-                    key={agent.slug}
-                    onClick={() => {
-                      setPendingAgent(agent.slug);
-                      onNewChat();
-                    }}
-                    title={agent.description ?? agent.name}
-                    className={cn(
-                      'w-full text-left py-1.5 px-2 text-xs rounded-md',
-                      'hover:bg-background-tertiary transition-colors',
-                      'flex items-center gap-2 cursor-pointer'
-                    )}
-                  >
-                    <div className="w-4 flex-shrink-0" />
-                    <Bird className="w-4 h-4 flex-shrink-0 text-text-secondary" />
-                    <span className="text-text-primary truncate">{agent.name}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Scrollable middle: ungrouped sessions + folders + their children */}
+            {/* Scrollable middle: ungrouped sessions + folders + agents + their children */}
             <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-[2px]">
               {ungroupedSessions.map(renderSessionRow)}
 
@@ -619,6 +607,58 @@ export const SessionsList: React.FC<SessionsListProps> = ({
                     {isFolderExpanded && folderSessions.length > 0 && (
                       <div className="pl-3 flex flex-col gap-[2px]">
                         {folderSessions.map(renderSessionRow)}
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+
+              {/* Geese-flock agent sections — each agent is a folder-shaped
+                  header with its own +New Chat and tagged-session children. */}
+              {flockAgents.map((agent) => {
+                const agentSessions = sessionsByAgent.get(agent.slug) ?? [];
+                const isAgentExpanded = !collapsedAgents.has(agent.slug);
+                const HeaderIcon = isAgentExpanded ? FolderOpen : Folder;
+                return (
+                  <React.Fragment key={`agent-${agent.slug}`}>
+                    <div
+                      onClick={() => toggleAgentExpanded(agent.slug)}
+                      title={agent.description ?? agent.name}
+                      className={cn(
+                        'w-full text-left py-1.5 px-2 text-xs rounded-md',
+                        'hover:bg-background-tertiary transition-colors',
+                        'flex items-center gap-2 cursor-pointer text-text-primary'
+                      )}
+                    >
+                      <div className="w-4 flex-shrink-0" />
+                      <HeaderIcon className="w-4 h-4 flex-shrink-0 text-text-secondary" />
+                      <span className="truncate flex-1 font-medium">{agent.name}</span>
+                      <span className="text-text-secondary tabular-nums">
+                        {agentSessions.length}
+                      </span>
+                    </div>
+                    {isAgentExpanded && (
+                      <div className="pl-3 flex flex-col gap-[2px]">
+                        {onNewChat && (
+                          <div
+                            onClick={() => {
+                              setPendingAgent(agent.slug);
+                              onNewChat();
+                            }}
+                            className={cn(
+                              'w-full text-left py-1.5 px-2 text-xs rounded-md',
+                              'hover:bg-background-tertiary transition-colors',
+                              'flex items-center gap-2 cursor-pointer'
+                            )}
+                          >
+                            <div className="w-4 flex-shrink-0" />
+                            <Plus className="w-4 h-4 flex-shrink-0 text-text-secondary" />
+                            <span className="text-text-primary">
+                              {intl.formatMessage(i18n.startNewChat)}
+                            </span>
+                          </div>
+                        )}
+                        {agentSessions.map(renderSessionRow)}
                       </div>
                     )}
                   </React.Fragment>
