@@ -30,10 +30,10 @@ interface SessionUiMetadataContextValue {
   // and clear the intent. Lets UI surfaces "start chat with agent X"
   // without needing onNewChat to grow new parameters.
   setPendingAgent: (slug: string | null) => void;
-  /** Read (without clearing) the current pendingAgent slug. Used by the
-   * session-create path so it can build a Recipe with that agent's identity
-   * before the session is actually created. */
-  peekPendingAgent: () => string | null;
+  /** Current pendingAgent slug, exposed as reactive state so consumers
+   * (like Hub.tsx pre-filling the chat input with `@<slug> `) re-render
+   * when the user clicks an agent button. */
+  pendingAgent: string | null;
 }
 
 const SessionUiMetadataContext = createContext<SessionUiMetadataContextValue | null>(null);
@@ -51,6 +51,11 @@ export function SessionUiMetadataProvider({ children }: { children: React.ReactN
   const [metadata, setMetadata] = useState<SessionUiMetadata>(EMPTY_SESSION_UI_METADATA);
   const writeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestRef = useRef<SessionUiMetadata>(EMPTY_SESSION_UI_METADATA);
+  // Reactive pendingAgent state so React subscribers (Hub.tsx) re-render
+  // when an agent is selected. Mirrored to a ref so the ADD_ACTIVE_SESSION
+  // listener can read the latest value synchronously without stale-closure
+  // problems.
+  const [pendingAgent, setPendingAgentState] = useState<string | null>(null);
   const pendingAgentRef = useRef<string | null>(null);
 
   // Load once on mount
@@ -118,6 +123,7 @@ export function SessionUiMetadataProvider({ children }: { children: React.ReactN
       const slug = pendingAgentRef.current;
       if (!slug) return;
       pendingAgentRef.current = null;
+      setPendingAgentState(null);
       setMetadata((prev) => {
         const current = prev.bySession[sessionId] ?? {};
         const merged: SessionUiData = { ...current, agent: slug };
@@ -135,9 +141,8 @@ export function SessionUiMetadataProvider({ children }: { children: React.ReactN
 
   const setPendingAgent = useCallback((slug: string | null) => {
     pendingAgentRef.current = slug;
+    setPendingAgentState(slug);
   }, []);
-
-  const peekPendingAgent = useCallback(() => pendingAgentRef.current, []);
 
   const updateSession = useCallback(
     (sessionId: string, patch: Partial<SessionUiData>) => {
@@ -257,7 +262,7 @@ export function SessionUiMetadataProvider({ children }: { children: React.ReactN
       removeFolder,
       setFolderExpanded,
       setPendingAgent,
-      peekPendingAgent,
+      pendingAgent,
     }),
     [
       metadata,
@@ -268,7 +273,7 @@ export function SessionUiMetadataProvider({ children }: { children: React.ReactN
       removeFolder,
       setFolderExpanded,
       setPendingAgent,
-      peekPendingAgent,
+      pendingAgent,
     ]
   );
 

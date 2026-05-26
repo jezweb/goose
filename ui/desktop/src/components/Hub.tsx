@@ -31,8 +31,6 @@ import { createSession } from '../sessions';
 import LoadingGoose from './LoadingGoose';
 import { UserInput } from '../types/message';
 import { useSessionUiMetadata } from '../contexts/SessionUiMetadataContext';
-import { useFlockAgents } from '../contexts/FlockAgentsContext';
-import type { Recipe } from '../api';
 
 export default function Hub({
   setView,
@@ -43,8 +41,14 @@ export default function Hub({
   const [workingDir, setWorkingDir] = useState(getInitialWorkingDir());
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const { peekPendingAgent } = useSessionUiMetadata();
-  const { agents: flockAgents } = useFlockAgents();
+  const { pendingAgent } = useSessionUiMetadata();
+
+  // When the user clicked an agent's "+ Start New Chat" before arriving here,
+  // pre-fill the chat input with the agent's @-mention so Goose's native
+  // subagent dispatch fires when they send their first message. This is the
+  // *correct* Goose primitive for agent invocation — see also the @-menu in
+  // the chat input that lets users summon any agent at any time.
+  const initialChatValue = pendingAgent ? `@${pendingAgent} ` : '';
 
   // rAF is more reliable than autoFocus across async render boundaries (Suspense, OnboardingGuard, etc.)
   useEffect(() => {
@@ -61,27 +65,10 @@ export default function Hub({
       clearExtensionOverrides();
       setIsCreatingSession(true);
 
-      // Geese-flock: if the user clicked an agent's "+ Start New Chat", build
-      // a Recipe from that agent's body content so the session loads with
-      // the agent's identity as its system prompt. ADD_ACTIVE_SESSION will
-      // still apply the agent tag and clear the pending slug afterwards.
-      const pendingAgentSlug = peekPendingAgent();
-      const pendingAgent = pendingAgentSlug
-        ? flockAgents.find((a) => a.slug === pendingAgentSlug)
-        : undefined;
-      const agentRecipe: Recipe | undefined = pendingAgent
-        ? {
-            title: pendingAgent.name,
-            description: pendingAgent.description ?? `Geese-flock agent: ${pendingAgent.name}`,
-            instructions: pendingAgent.body,
-          }
-        : undefined;
-
       try {
         const session = await createSession(workingDir, {
           extensionConfigs,
           allExtensions: extensionConfigs.length > 0 ? undefined : extensionsList,
-          recipe: agentRecipe,
         });
 
         window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
@@ -120,7 +107,7 @@ export default function Hub({
           handleSubmit={handleSubmit}
           chatState={isCreatingSession ? ChatState.LoadingConversation : ChatState.Idle}
           onStop={() => {}}
-          initialValue=""
+          initialValue={initialChatValue}
           setView={setView}
           totalTokens={0}
           accumulatedInputTokens={0}
