@@ -1,8 +1,9 @@
 ---
 title: Geese-flock — design notes (revised, post-implementation)
 status: v1-shipped — honest record of what we built and what we learned
-last_revised: 2026-05-26 12:35 (after a 12-hour overnight + morning build session)
+last_revised: 2026-05-26 15:30 (Office Town vocabulary added)
 related:
+  - ~/Documents/.jez/knowledge/office-town.md  ← the canonical methodology vocabulary
   - .jez/artifacts/scheduler-spawn-modes-design.md
   - https://github.com/block/goose/discussions/9416
 ---
@@ -157,6 +158,21 @@ We've been calling it "geese-flock". Honestly:
 The "flock" name can stay reserved for the future when (and if) the goanna-bridge / CWD-as-agent / open-source-workers ambitions land. Today's work doesn't need a new identity.
 
 When you next pick this up: ask yourself if you want to push these changes upstream (they're rebase-friendly), keep them as your personal fork, or expand them into something bigger. All three are valid; today's work supports any of them.
+
+## Office Town — the vocabulary layer
+
+Separately from the fork itself, we now have a documented vocabulary for talking about how Goose + goanna fit together: **Office Town** (canonical doc at `~/Documents/.jez/knowledge/office-town.md`).
+
+The four primitives:
+
+- **Town** = the whole world (the goose + goanna setup)
+- **Place** = a workspace (Goose *project* — a working directory with `.goosehints`)
+- **Role** = an identity (Goose *agent* — a `.md` file invoked via `@-mention`)
+- **Task** = a piece of work (Goose *session* / chat)
+
+Verb: you **delegate to** a role; you **work at** a place; you **open** a task.
+
+The full 13-word vocabulary, the bracket convention (when to show the Goose primitive in brackets), the visual map, and sample briefings live in the canonical doc. It applies wherever we write about the system in business language — briefings, internal docs, client material. It doesn't touch Goose's UI or code.
 
 ---
 
