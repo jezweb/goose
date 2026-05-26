@@ -14,6 +14,7 @@ import {
   FolderOpen,
   FolderPlus,
   FolderMinus,
+  Bird,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
@@ -39,6 +40,7 @@ import type { SessionStatus } from './types';
 import { AppEvents } from '../../../constants/events';
 import { defineMessages, useIntl } from '../../../i18n';
 import { useSessionUiMetadata } from '../../../contexts/SessionUiMetadataContext';
+import { useFlockAgents } from '../../../contexts/FlockAgentsContext';
 import {
   SESSION_COLORS,
   SESSION_ICONS,
@@ -51,6 +53,14 @@ const i18n = defineMessages({
   startNewChat: {
     id: 'sessionsList.startNewChat',
     defaultMessage: 'Start New Chat',
+  },
+  startChatWithAgent: {
+    id: 'sessionsList.startChatWithAgent',
+    defaultMessage: 'Start chat with {agent}',
+  },
+  agentsHeader: {
+    id: 'sessionsList.agentsHeader',
+    defaultMessage: 'Agents',
   },
   untitledSession: {
     id: 'sessionsList.untitledSession',
@@ -171,7 +181,9 @@ export const SessionsList: React.FC<SessionsListProps> = ({
     renameFolder,
     removeFolder,
     setFolderExpanded,
+    setPendingAgent,
   } = useSessionUiMetadata();
+  const { agents: flockAgents } = useFlockAgents();
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [sessionToDelete, setSessionToDelete] = useState<Session | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -304,6 +316,9 @@ export const SessionsList: React.FC<SessionsListProps> = ({
     // Precedence: user-chosen icon > recipe (ChefHat) > default (MessageSquare)
     const RowIcon = iconEntry?.Icon ?? (session.recipe ? ChefHat : MessageSquare);
     const currentFolderId = sessionUi?.folderId ?? null;
+    const sessionAgent = sessionUi?.agent
+      ? flockAgents.find((a) => a.slug === sessionUi.agent)
+      : undefined;
 
     return (
       <ContextMenu key={session.id}>
@@ -349,6 +364,14 @@ export const SessionsList: React.FC<SessionsListProps> = ({
               onEditStart={() => setEditingSessionId(session.id)}
               onEditEnd={() => setEditingSessionId(null)}
             />
+            {sessionAgent && (
+              <span
+                className="text-text-secondary text-[10px] truncate max-w-[80px] flex-shrink-0"
+                title={`Agent: ${sessionAgent.name}`}
+              >
+                {sessionAgent.slug}
+              </span>
+            )}
             <SessionIndicators
               isStreaming={isStreaming}
               hasUnread={hasUnread}
@@ -555,6 +578,31 @@ export const SessionsList: React.FC<SessionsListProps> = ({
                 <div className="w-4 flex-shrink-0" />
                 <Plus className="w-4 h-4 flex-shrink-0 text-text-secondary" />
                 <span className="text-text-primary">{intl.formatMessage(i18n.startNewChat)}</span>
+              </div>
+            )}
+
+            {/* Geese-flock: quick-start buttons for each agent under ~/.agents/agents/ */}
+            {onNewChat && flockAgents.length > 0 && (
+              <div className="flex-shrink-0 flex flex-col gap-[2px]">
+                {flockAgents.map((agent) => (
+                  <div
+                    key={agent.slug}
+                    onClick={() => {
+                      setPendingAgent(agent.slug);
+                      onNewChat();
+                    }}
+                    title={agent.description ?? agent.name}
+                    className={cn(
+                      'w-full text-left py-1.5 px-2 text-xs rounded-md',
+                      'hover:bg-background-tertiary transition-colors',
+                      'flex items-center gap-2 cursor-pointer'
+                    )}
+                  >
+                    <div className="w-4 flex-shrink-0" />
+                    <Bird className="w-4 h-4 flex-shrink-0 text-text-secondary" />
+                    <span className="text-text-primary truncate">{agent.name}</span>
+                  </div>
+                ))}
               </div>
             )}
 

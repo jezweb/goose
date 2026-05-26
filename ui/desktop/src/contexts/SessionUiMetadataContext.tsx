@@ -25,6 +25,11 @@ interface SessionUiMetadataContextValue {
   renameFolder: (id: string, name: string) => void;
   removeFolder: (id: string) => void;
   setFolderExpanded: (id: string, expanded: boolean) => void;
+  // Flock agent intent — set before triggering a new-chat flow; the next
+  // ADD_ACTIVE_SESSION event will tag that session with this agent slug
+  // and clear the intent. Lets UI surfaces "start chat with agent X"
+  // without needing onNewChat to grow new parameters.
+  setPendingAgent: (slug: string | null) => void;
 }
 
 const SessionUiMetadataContext = createContext<SessionUiMetadataContextValue | null>(null);
@@ -42,6 +47,7 @@ export function SessionUiMetadataProvider({ children }: { children: React.ReactN
   const [metadata, setMetadata] = useState<SessionUiMetadata>(EMPTY_SESSION_UI_METADATA);
   const writeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestRef = useRef<SessionUiMetadata>(EMPTY_SESSION_UI_METADATA);
+  const pendingAgentRef = useRef<string | null>(null);
 
   // Load once on mount
   useEffect(() => {
@@ -96,6 +102,36 @@ export function SessionUiMetadataProvider({ children }: { children: React.ReactN
     window.addEventListener(AppEvents.SESSION_DELETED, handler);
     return () => window.removeEventListener(AppEvents.SESSION_DELETED, handler);
   }, [persist]);
+
+  // Apply pending agent assignment to newly-created sessions. The intent is
+  // set by an agent-button click; the next ADD_ACTIVE_SESSION event tells us
+  // which session id to tag. Intent clears after one use so it doesn't leak
+  // into subsequent unrelated session creations.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId;
+      if (!sessionId) return;
+      const slug = pendingAgentRef.current;
+      if (!slug) return;
+      pendingAgentRef.current = null;
+      setMetadata((prev) => {
+        const current = prev.bySession[sessionId] ?? {};
+        const merged: SessionUiData = { ...current, agent: slug };
+        const next: SessionUiMetadata = {
+          ...prev,
+          bySession: { ...prev.bySession, [sessionId]: merged },
+        };
+        persist(next);
+        return next;
+      });
+    };
+    window.addEventListener(AppEvents.ADD_ACTIVE_SESSION, handler);
+    return () => window.removeEventListener(AppEvents.ADD_ACTIVE_SESSION, handler);
+  }, [persist]);
+
+  const setPendingAgent = useCallback((slug: string | null) => {
+    pendingAgentRef.current = slug;
+  }, []);
 
   const updateSession = useCallback(
     (sessionId: string, patch: Partial<SessionUiData>) => {
@@ -214,6 +250,7 @@ export function SessionUiMetadataProvider({ children }: { children: React.ReactN
       renameFolder,
       removeFolder,
       setFolderExpanded,
+      setPendingAgent,
     }),
     [
       metadata,
@@ -223,6 +260,7 @@ export function SessionUiMetadataProvider({ children }: { children: React.ReactN
       renameFolder,
       removeFolder,
       setFolderExpanded,
+      setPendingAgent,
     ]
   );
 

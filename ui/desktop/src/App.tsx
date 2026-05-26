@@ -41,6 +41,7 @@ import { ModelAndProviderProvider } from './components/ModelAndProviderContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { FeaturesProvider } from './contexts/FeaturesContext';
 import { SessionUiMetadataProvider } from './contexts/SessionUiMetadataContext';
+import { FlockAgentsProvider } from './contexts/FlockAgentsContext';
 import PermissionSettingsView from './components/settings/permission/PermissionSetting';
 
 import ExtensionsView, { ExtensionsViewOptions } from './components/extensions/ExtensionsView';
@@ -717,11 +718,13 @@ export default function App() {
       <FeaturesProvider>
         <ModelAndProviderProvider>
           <SessionUiMetadataProvider>
-            <HashRouter>
-              <AppInner />
-            </HashRouter>
-            <AnnouncementModal />
-            <TelemetryConsentPrompt />
+            <FlockAgentsProvider>
+              <HashRouter>
+                <AppInner />
+              </HashRouter>
+              <AnnouncementModal />
+              <TelemetryConsentPrompt />
+            </FlockAgentsProvider>
           </SessionUiMetadataProvider>
         </ModelAndProviderProvider>
       </FeaturesProvider>

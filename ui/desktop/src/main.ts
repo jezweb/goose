@@ -1671,6 +1671,93 @@ ipcMain.handle('get-session-ui-metadata', () => {
   return readSessionUiMetadata();
 });
 
+// Geese-flock: scan ~/.agents/agents/ for agent markdown files with YAML
+// frontmatter. Returns one FlockAgent per .md file found at the top level.
+// Matches Goose's native agent discovery convention; safe to extend later
+// to include project-local .agents/agents/ directories.
+interface FlockAgentResult {
+  slug: string;
+  name: string;
+  description?: string;
+  model?: string;
+  path: string;
+}
+
+function parseAgentFrontmatter(content: string): {
+  name?: string;
+  description?: string;
+  model?: string;
+} | null {
+  // Mirror Goose's parser: split on '---', take parts[1] as the YAML block.
+  const parts = content.split('---');
+  if (parts.length < 3) return null;
+  const yaml = parts[1].trim();
+  // Minimal YAML parse — agent frontmatter is flat key:value lines, no need
+  // for a full YAML dependency for this read path. If a richer schema is
+  // ever needed we can swap in js-yaml.
+  const result: Record<string, string> = {};
+  for (const line of yaml.split('\n')) {
+    const colonIdx = line.indexOf(':');
+    if (colonIdx === -1) continue;
+    const key = line.slice(0, colonIdx).trim();
+    let value = line.slice(colonIdx + 1).trim();
+    // Strip surrounding quotes if present
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (key && value) result[key] = value;
+  }
+  return {
+    name: result.name,
+    description: result.description,
+    model: result.model,
+  };
+}
+
+function readFlockAgents(): FlockAgentResult[] {
+  const agentsDir = path.join(os.homedir(), '.agents', 'agents');
+  if (!fsSync.existsSync(agentsDir)) return [];
+  let entries: string[];
+  try {
+    entries = fsSync.readdirSync(agentsDir);
+  } catch (err) {
+    console.error('Failed to read flock agents directory:', err);
+    return [];
+  }
+  const agents: FlockAgentResult[] = [];
+  for (const entry of entries) {
+    if (!entry.endsWith('.md')) continue;
+    const fullPath = path.join(agentsDir, entry);
+    try {
+      const stat = fsSync.statSync(fullPath);
+      if (!stat.isFile()) continue;
+      const content = fsSync.readFileSync(fullPath, 'utf8');
+      const fm = parseAgentFrontmatter(content);
+      if (!fm || !fm.name) continue;
+      agents.push({
+        slug: entry.replace(/\.md$/, ''),
+        name: fm.name,
+        description: fm.description,
+        model: fm.model,
+        path: fullPath,
+      });
+    } catch (err) {
+      console.error(`Failed to parse flock agent ${entry}:`, err);
+    }
+  }
+  // Stable order — alphabetical by slug. Future versions might honour a
+  // `position` field in frontmatter or a top-level config file.
+  agents.sort((a, b) => a.slug.localeCompare(b.slug));
+  return agents;
+}
+
+ipcMain.handle('get-flock-agents', () => {
+  return readFlockAgents();
+});
+
 ipcMain.handle('set-session-ui-metadata', (_event, metadata: unknown) => {
   // Shape validation: must be the v1 envelope we expect.
   if (

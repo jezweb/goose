@@ -4,6 +4,7 @@ import { GooseApp } from './api';
 import type { Settings, SettingKey } from './utils/settings';
 import { defaultSettings } from './utils/settings';
 import type { SessionUiMetadata } from './types/sessionUiMetadata';
+import type { FlockAgent } from './types/flockAgent';
 
 // Mapping from settings keys to their old localStorage keys for lazy migration
 const localStorageKeyMap: Partial<Record<SettingKey, string>> = {
@@ -142,6 +143,7 @@ type ElectronAPI = {
   setSetting: <K extends SettingKey>(key: K, value: Settings[K]) => Promise<void>;
   getSessionUiMetadata: () => Promise<SessionUiMetadata>;
   setSessionUiMetadata: (metadata: SessionUiMetadata) => Promise<void>;
+  getFlockAgents: () => Promise<FlockAgent[]>;
   getSecretKey: () => Promise<string>;
   getGoosedHostPort: () => Promise<string | null>;
   getAcpUrl: () => Promise<string | null>;
@@ -269,6 +271,7 @@ const electronAPI: ElectronAPI = {
   getSessionUiMetadata: () => ipcRenderer.invoke('get-session-ui-metadata'),
   setSessionUiMetadata: (metadata: SessionUiMetadata) =>
     ipcRenderer.invoke('set-session-ui-metadata', metadata),
+  getFlockAgents: () => ipcRenderer.invoke('get-flock-agents'),
   getSecretKey: () => ipcRenderer.invoke('get-secret-key'),
   getGoosedHostPort: () => ipcRenderer.invoke('get-goosed-host-port'),
   getAcpUrl: () => ipcRenderer.invoke('get-acp-url'),

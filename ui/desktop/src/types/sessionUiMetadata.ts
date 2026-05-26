@@ -14,6 +14,8 @@ export interface SessionUiData {
   icon?: string;
   /** Folder this session belongs to, or null/undefined for ungrouped. */
   folderId?: string | null;
+  /** Geese-flock agent slug this session belongs to. undefined = unassigned. */
+  agent?: string;
 }
 
 export interface FolderData {
