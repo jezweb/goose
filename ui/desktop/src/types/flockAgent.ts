@@ -19,4 +19,8 @@ export interface FlockAgent {
   model?: string;
   /** Absolute path to the agent's .md file, useful for the substrate plugin. */
   path: string;
+  /** Body of the markdown file (everything after the closing frontmatter
+   * `---`). This becomes the system prompt / `instructions` when we build
+   * a Recipe to start an agent-tagged chat. */
+  body: string;
 }

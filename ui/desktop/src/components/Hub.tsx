@@ -30,6 +30,9 @@ import { getInitialWorkingDir } from '../utils/workingDir';
 import { createSession } from '../sessions';
 import LoadingGoose from './LoadingGoose';
 import { UserInput } from '../types/message';
+import { useSessionUiMetadata } from '../contexts/SessionUiMetadataContext';
+import { useFlockAgents } from '../contexts/FlockAgentsContext';
+import type { Recipe } from '../api';
 
 export default function Hub({
   setView,
@@ -40,6 +43,8 @@ export default function Hub({
   const [workingDir, setWorkingDir] = useState(getInitialWorkingDir());
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const { peekPendingAgent } = useSessionUiMetadata();
+  const { agents: flockAgents } = useFlockAgents();
 
   // rAF is more reliable than autoFocus across async render boundaries (Suspense, OnboardingGuard, etc.)
   useEffect(() => {
@@ -56,10 +61,27 @@ export default function Hub({
       clearExtensionOverrides();
       setIsCreatingSession(true);
 
+      // Geese-flock: if the user clicked an agent's "+ Start New Chat", build
+      // a Recipe from that agent's body content so the session loads with
+      // the agent's identity as its system prompt. ADD_ACTIVE_SESSION will
+      // still apply the agent tag and clear the pending slug afterwards.
+      const pendingAgentSlug = peekPendingAgent();
+      const pendingAgent = pendingAgentSlug
+        ? flockAgents.find((a) => a.slug === pendingAgentSlug)
+        : undefined;
+      const agentRecipe: Recipe | undefined = pendingAgent
+        ? {
+            title: pendingAgent.name,
+            description: pendingAgent.description ?? `Geese-flock agent: ${pendingAgent.name}`,
+            instructions: pendingAgent.body,
+          }
+        : undefined;
+
       try {
         const session = await createSession(workingDir, {
           extensionConfigs,
           allExtensions: extensionConfigs.length > 0 ? undefined : extensionsList,
+          recipe: agentRecipe,
         });
 
         window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));

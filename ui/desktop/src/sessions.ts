@@ -39,6 +39,7 @@ export async function createSession(
   options?: {
     recipeDeeplink?: string;
     recipeId?: string;
+    recipe?: Recipe;
     extensionConfigs?: ExtensionConfig[];
     allExtensions?: FixedExtensionEntry[];
   }
@@ -56,6 +57,11 @@ export async function createSession(
     body.recipe_id = options.recipeId;
   } else if (options?.recipeDeeplink) {
     body.recipe = await decodeRecipe(options.recipeDeeplink);
+  } else if (options?.recipe) {
+    // Inline Recipe — used by geese-flock to inject an agent's identity as
+    // the session's system prompt without needing to serialise the recipe
+    // to disk or to a deeplink first.
+    body.recipe = options.recipe;
   }
 
   if (options?.extensionConfigs && options.extensionConfigs.length > 0) {

@@ -30,6 +30,10 @@ interface SessionUiMetadataContextValue {
   // and clear the intent. Lets UI surfaces "start chat with agent X"
   // without needing onNewChat to grow new parameters.
   setPendingAgent: (slug: string | null) => void;
+  /** Read (without clearing) the current pendingAgent slug. Used by the
+   * session-create path so it can build a Recipe with that agent's identity
+   * before the session is actually created. */
+  peekPendingAgent: () => string | null;
 }
 
 const SessionUiMetadataContext = createContext<SessionUiMetadataContextValue | null>(null);
@@ -132,6 +136,8 @@ export function SessionUiMetadataProvider({ children }: { children: React.ReactN
   const setPendingAgent = useCallback((slug: string | null) => {
     pendingAgentRef.current = slug;
   }, []);
+
+  const peekPendingAgent = useCallback(() => pendingAgentRef.current, []);
 
   const updateSession = useCallback(
     (sessionId: string, patch: Partial<SessionUiData>) => {
@@ -251,6 +257,7 @@ export function SessionUiMetadataProvider({ children }: { children: React.ReactN
       removeFolder,
       setFolderExpanded,
       setPendingAgent,
+      peekPendingAgent,
     }),
     [
       metadata,
@@ -261,6 +268,7 @@ export function SessionUiMetadataProvider({ children }: { children: React.ReactN
       removeFolder,
       setFolderExpanded,
       setPendingAgent,
+      peekPendingAgent,
     ]
   );
 

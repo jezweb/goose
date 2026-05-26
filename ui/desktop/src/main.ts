@@ -1681,17 +1681,23 @@ interface FlockAgentResult {
   description?: string;
   model?: string;
   path: string;
+  body: string;
 }
 
-function parseAgentFrontmatter(content: string): {
+function parseAgentMarkdown(content: string): {
   name?: string;
   description?: string;
   model?: string;
+  body: string;
 } | null {
-  // Mirror Goose's parser: split on '---', take parts[1] as the YAML block.
+  // Mirror Goose's parser: split on '---', take parts[1] as the YAML block
+  // and parts[2..] joined as the markdown body. Same shape used in
+  // crates/goose/src/sources.rs::parse_frontmatter so our file produces
+  // identical results to Goose's own scanner.
   const parts = content.split('---');
   if (parts.length < 3) return null;
   const yaml = parts[1].trim();
+  const body = parts.slice(2).join('---').trim();
   // Minimal YAML parse — agent frontmatter is flat key:value lines, no need
   // for a full YAML dependency for this read path. If a richer schema is
   // ever needed we can swap in js-yaml.
@@ -1714,6 +1720,7 @@ function parseAgentFrontmatter(content: string): {
     name: result.name,
     description: result.description,
     model: result.model,
+    body,
   };
 }
 
@@ -1735,14 +1742,15 @@ function readFlockAgents(): FlockAgentResult[] {
       const stat = fsSync.statSync(fullPath);
       if (!stat.isFile()) continue;
       const content = fsSync.readFileSync(fullPath, 'utf8');
-      const fm = parseAgentFrontmatter(content);
-      if (!fm || !fm.name) continue;
+      const parsed = parseAgentMarkdown(content);
+      if (!parsed || !parsed.name) continue;
       agents.push({
         slug: entry.replace(/\.md$/, ''),
-        name: fm.name,
-        description: fm.description,
-        model: fm.model,
+        name: parsed.name,
+        description: parsed.description,
+        model: parsed.model,
         path: fullPath,
+        body: parsed.body,
       });
     } catch (err) {
       console.error(`Failed to parse flock agent ${entry}:`, err);
